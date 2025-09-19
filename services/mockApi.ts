@@ -1036,6 +1036,69 @@ export const getTrainingCompanyDashboardStats = async (): Promise<{ totalCourses
     };
 };
 
+export const getInitialAiTutorMessage = async (examineeId: string): Promise<{ message: string }> => {
+    await sleep(1200);
+    const userResults = mockExamResults.filter(r => r.examineeId === examineeId)
+        .sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+
+    if (userResults.length === 0) {
+        return { message: "Welcome! I'm your AI Study Buddy. Feel free to ask me anything about your courses or exams." };
+    }
+
+    const lastResult = userResults[0];
+    const allExams = [...mockExams, ...mockCorporateExams];
+    const exam = allExams.find(e => e.id === lastResult.examId);
+    if (!exam) {
+        return { message: "Welcome back! I'm your AI Study Buddy. Ready to tackle your next exam?" };
+    }
+
+    const isCorrect = (q: Question, ans: Answer) => {
+        if (!ans) return false;
+        return JSON.stringify(ans).toLowerCase() === JSON.stringify(q.correctAnswer).toLowerCase();
+    };
+
+    const incorrectAnswers = exam.questions
+        .filter(q => !isCorrect(q, lastResult.answers[q.id]))
+        .map(q => q.text);
+    
+    const scorePercentage = (lastResult.score / lastResult.totalPoints) * 100;
+
+    const schema = {
+        type: Type.OBJECT, properties: { message: { type: Type.STRING } }, required: ['message']
+    };
+
+    const prompt = `You are a friendly and encouraging AI Study Buddy for a student named Fatima.
+    
+    Her last exam result:
+    - Exam: "${lastResult.examTitle}"
+    - Score: ${scorePercentage.toFixed(0)}%
+    - Questions she answered incorrectly: ${JSON.stringify(incorrectAnswers)}
+    
+    Based on this, generate a single, short, welcoming message (2-3 sentences).
+    - Start by greeting her.
+    - Mention her performance on the exam (positively if the score is > 70%, encouragingly otherwise).
+    - Proactively offer to help with one of the specific topics she struggled with.
+    - Keep it concise and friendly.
+    - Example for good score: "Hi Fatima! Great job on the React Fundamentals exam. I see you've got a good handle on most topics. Would you like to quickly review props or hooks to solidify your knowledge?"
+    - Example for lower score: "Hi Fatima! Welcome back. The React Fundamentals exam can be tricky, but you're making good progress. I noticed a couple of questions about hooks were tough. Would you like to go over them together?"
+    - The output must be a valid JSON object matching the schema.`;
+
+     try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: { responseMimeType: "application/json", responseSchema: schema },
+        });
+        const jsonString = response.text.trim();
+        const result = JSON.parse(jsonString);
+        if (typeof result.message !== 'string') throw new Error("Invalid AI response");
+        return result;
+    } catch (error) {
+        console.error("Error generating initial tutor message:", error);
+        return { message: `Welcome back! I'm here to help you study for your next exam.` };
+    }
+}
+
 // --- API Methods ---
 
 // Category Management API
