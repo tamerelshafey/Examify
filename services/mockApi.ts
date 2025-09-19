@@ -136,6 +136,60 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- AI Service ---
 
+export const analyzeQuestionWithAI = async (params: { questionText: string; existingCategories: Record<string, string[]> }): Promise<{ feedback: string; category: string; subCategory: string; tags: string[] }> => {
+    const { questionText, existingCategories } = params;
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            feedback: { type: Type.STRING, description: "A brief, 1-2 sentence pedagogical analysis of the question's quality and clarity." },
+            category: { type: Type.STRING, description: "The most appropriate main category for this question." },
+            subCategory: { type: Type.STRING, description: "The most appropriate sub-category within the suggested main category." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "An array of 2-3 relevant topic tags." },
+        },
+        required: ['feedback', 'category', 'subCategory', 'tags']
+    };
+
+    const prompt = `You are an expert pedagogical assistant. Analyze the following exam question.
+    
+    Question Text: "${questionText}"
+    
+    Available Categories and Sub-categories:
+    ${JSON.stringify(existingCategories)}
+    
+    RULES:
+    - Provide a concise (1-2 sentences) pedagogical analysis of the question. Comment on its clarity, what it effectively tests, and any potential ambiguities.
+    - Based on the question text, suggest the most fitting category and sub-category from the provided list.
+    - If no suitable category exists, you may suggest a new, logical one.
+    - Generate 2-3 relevant and specific tags for the question.
+    - The final output MUST be a valid JSON object matching the provided schema.
+    `;
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: schema,
+            },
+        });
+
+        const jsonString = response.text.trim();
+        const result = JSON.parse(jsonString);
+
+        if (!result.feedback || !result.category || !result.subCategory || !Array.isArray(result.tags)) {
+            throw new Error("AI returned an invalid data structure for question analysis.");
+        }
+
+        return result;
+    } catch (error) {
+        console.error("Error analyzing question with AI:", error);
+        throw new Error("Failed to get AI question analysis. Please try again.");
+    }
+};
+
+
 export const generateFullExamWithAI = async (params: { topic: string; difficulty: string; count: number }): Promise<Omit<Exam, 'id' | 'questionCount'>> => {
     const { topic, difficulty, count } = params;
 

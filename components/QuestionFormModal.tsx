@@ -1,8 +1,9 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Question, QuestionType } from '../types';
-import { XCircleIcon, Wand2Icon, SpinnerIcon } from './icons';
-import { getAIQuestionSuggestions, getCategories } from '../services/mockApi';
+import { XCircleIcon, Wand2Icon, SpinnerIcon, LightbulbIcon } from './icons';
+import { getAIQuestionSuggestions, getCategories, analyzeQuestionWithAI } from '../services/mockApi';
 import { useLanguage } from '../App';
 
 interface QuestionFormModalProps {
@@ -18,6 +19,7 @@ const translations = {
         createTitle: "Create New Question",
         questionText: "Question Text",
         aiAssist: "Complete with AI (min 15 chars)",
+        aiAnalyze: "Analyze with AI (min 20 chars)",
         questionType: "Question Type",
         points: "Points",
         tags: "Tags (comma-separated)",
@@ -38,12 +40,20 @@ const translations = {
         modelAnswerHelp: "Provide the model answer or grading criteria here...",
         cancel: "Cancel",
         save: "Save Question",
+        aiAnalysis: {
+            title: "AI Analysis & Suggestions",
+            feedback: "Pedagogical Feedback",
+            category: "Suggested Category",
+            tags: "Suggested Tags",
+            apply: "Apply",
+        },
     },
     ar: {
         editTitle: "تعديل السؤال",
         createTitle: "إنشاء سؤال جديد",
         questionText: "نص السؤال",
         aiAssist: "أكمل بالذكاء الاصطناعي (15 حرفًا على الأقل)",
+        aiAnalyze: "تحليل بالذكاء الاصطناعي (20 حرفًا على الأقل)",
         questionType: "نوع السؤال",
         points: "النقاط",
         tags: "الوسوم (مفصولة بفاصلة)",
@@ -64,9 +74,16 @@ const translations = {
         modelAnswerHelp: "أدخل الإجابة النموذجية أو معايير التصحيح هنا...",
         cancel: "إلغاء",
         save: "حفظ السؤال",
+        aiAnalysis: {
+            title: "تحليل ومقترحات الذكاء الاصطناعي",
+            feedback: "ملاحظات تربوية",
+            category: "الفئة المقترحة",
+            tags: "الوسوم المقترحة",
+            apply: "تطبيق",
+        },
     }
 }
-
+type AnalysisResult = { feedback: string; category: string; subCategory: string; tags: string[] };
 type EditableQuestion = Omit<Question, 'id'>;
 const DEFAULT_QUESTION: EditableQuestion = {
     ownerId: '', // Will be set on save
@@ -82,7 +99,8 @@ const DEFAULT_QUESTION: EditableQuestion = {
 
 const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, onSave, question }) => {
   const [formData, setFormData] = useState<EditableQuestion | Question>(DEFAULT_QUESTION);
-  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState<'assist' | 'analyze' | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [categories, setCategories] = useState<Record<string, string[]>>({});
   const { lang } = useLanguage();
   const t = translations[lang];
@@ -95,6 +113,7 @@ const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, 
         };
         fetchCats();
         setFormData(question ? { ...question } : DEFAULT_QUESTION);
+        setAnalysisResult(null);
     }
   }, [isOpen, question]);
   
@@ -151,7 +170,7 @@ const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, 
 
   const handleAiAssist = async () => {
       if (formData.text.length < 15) return;
-      setIsAiLoading(true);
+      setAiLoading('assist');
       try {
           const suggestions = await getAIQuestionSuggestions({ partialQuestionText: formData.text });
           setFormData(prev => ({
@@ -164,11 +183,24 @@ const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, 
               type: QuestionType.MultipleChoice,
           }));
       } catch (error) {
-          console.error("AI assist failed", error);
           alert("AI assistance failed. Please try again.");
       } finally {
-          setIsAiLoading(false);
+          setAiLoading(null);
       }
+  };
+
+  const handleAiAnalyze = async () => {
+    if (formData.text.length < 20) return;
+    setAiLoading('analyze');
+    setAnalysisResult(null);
+    try {
+        const result = await analyzeQuestionWithAI({ questionText: formData.text, existingCategories: categories });
+        setAnalysisResult(result);
+    } catch (error) {
+        alert("AI analysis failed. Please try again.");
+    } finally {
+        setAiLoading(null);
+    }
   };
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -191,144 +223,54 @@ const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, 
             <div className="relative">
                 <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.questionText}</label>
                 <textarea placeholder={t.questionText} value={q.text} onChange={e => handleChange('text', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full h-24" required />
-                <button type="button" onClick={handleAiAssist} disabled={isAiLoading || formData.text.length < 15} className="absolute top-8 right-2 p-1.5 bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300 rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 disabled:opacity-50" title={t.aiAssist}><Wand2Icon className="w-4 h-4" /></button>
+                <div className="absolute top-8 right-2 flex gap-1">
+                    <button type="button" onClick={handleAiAssist} disabled={!!aiLoading || q.text.length < 15} className="p-1.5 bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300 rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 disabled:opacity-50" title={t.aiAssist}>
+                        {aiLoading === 'assist' ? <SpinnerIcon className="w-4 h-4" /> : <Wand2Icon className="w-4 h-4" />}
+                    </button>
+                    <button type="button" onClick={handleAiAnalyze} disabled={!!aiLoading || q.text.length < 20} className="p-1.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 disabled:opacity-50" title={t.aiAnalyze}>
+                         {aiLoading === 'analyze' ? <SpinnerIcon className="w-4 h-4" /> : <LightbulbIcon className="w-4 h-4" />}
+                    </button>
+                </div>
             </div>
+            
+            {analysisResult && (
+                <div className="p-4 bg-slate-100 dark:bg-slate-700 rounded-lg space-y-3">
+                    <h4 className="font-bold text-slate-800 dark:text-slate-100 flex items-center"><LightbulbIcon className="w-5 h-5 me-2 text-yellow-500" />{t.aiAnalysis.title}</h4>
+                    <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">{t.aiAnalysis.feedback}</p>
+                        <p className="text-sm italic text-slate-700 dark:text-slate-200">"{analysisResult.feedback}"</p>
+                    </div>
+                     <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">{t.aiAnalysis.category}:</p>
+                        <span className="text-sm font-mono bg-slate-200 dark:bg-slate-600 px-2 py-0.5 rounded">{analysisResult.category} &gt; {analysisResult.subCategory}</span>
+                        <button onClick={() => { handleChange('category', analysisResult.category); handleChange('subCategory', analysisResult.subCategory); }} type="button" className="text-xs font-bold text-primary-500 hover:underline">{t.aiAnalysis.apply}</button>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">{t.aiAnalysis.tags}:</p>
+                        <div className="flex flex-wrap gap-1">
+                            {analysisResult.tags.map(tag => <span key={tag} className="text-sm font-mono bg-slate-200 dark:bg-slate-600 px-2 py-0.5 rounded">{tag}</span>)}
+                        </div>
+                        <button onClick={() => handleChange('tags', analysisResult.tags)} type="button" className="text-xs font-bold text-primary-500 hover:underline">{t.aiAnalysis.apply}</button>
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                     <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.category}</label>
-                     <select value={q.category} onChange={e => handleChange('category', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" required>
-                         <option value="" disabled>{t.selectCategory}</option>
-                         {Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                     </select>
-                </div>
-                <div>
-                     <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.subCategory}</label>
-                     <select value={q.subCategory} onChange={e => handleChange('subCategory', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" disabled={!q.category} required>
-                         <option value="" disabled>{t.selectSubCategory}</option>
-                         {(categories[q.category] || []).map(sub => <option key={sub} value={sub}>{sub}</option>)}
-                     </select>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.questionType}</label>
-                    <select value={q.type} onChange={e => handleTypeChange(e.target.value as QuestionType)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full">
-                        {Object.values(QuestionType).map(type => (
-                          <option key={type} value={type}>{type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
-                        ))}
-                    </select>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.points}</label>
-                    <input type="number" placeholder="Points" value={q.points} onChange={e => handleChange('points', parseInt(e.target.value))} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" required />
-                </div>
+                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.category}</label><select value={q.category} onChange={e => handleChange('category', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" required><option value="" disabled>{t.selectCategory}</option>{Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
+                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.subCategory}</label><select value={q.subCategory} onChange={e => handleChange('subCategory', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" disabled={!q.category} required><option value="" disabled>{t.selectSubCategory}</option>{(categories[q.category] || []).map(sub => <option key={sub} value={sub}>{sub}</option>)}</select></div>
+                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.questionType}</label><select value={q.type} onChange={e => handleTypeChange(e.target.value as QuestionType)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full">{Object.values(QuestionType).map(type => (<option key={type} value={type}>{type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>))}</select></div>
+                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.points}</label><input type="number" placeholder="Points" value={q.points} onChange={e => handleChange('points', parseInt(e.target.value))} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" required /></div>
             </div>
 
             <div className="p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
                 <h3 className="font-semibold mb-3">{t.answerConfig}</h3>
-                {q.type === QuestionType.MultipleChoice && (
-                    <div className="space-y-2">
-                        {q.options?.map((opt, oIndex) => (
-                            <div key={oIndex} className="flex items-center gap-2">
-                                <input type="radio" name={`correct-answer`} value={opt} checked={q.correctAnswer === opt} onChange={e => handleChange('correctAnswer', e.target.value)} />
-                                <input type="text" placeholder={`Option ${oIndex + 1}`} value={opt} onChange={e => handleOptionChange(oIndex, e.target.value)} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/>
-                                <button type="button" onClick={() => removeListItem(oIndex)} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.options && q.options.length <= 2}><XCircleIcon className="w-5 h-5" /></button>
-                            </div>
-                        ))}
-                        <button type="button" onClick={() => addListItem()} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addOption}</button>
-                    </div>
-                )}
-                {q.type === QuestionType.MultipleSelect && (
-                    <div className="space-y-2">
-                        {q.options?.map((opt, oIndex) => (
-                            <div key={oIndex} className="flex items-center gap-2">
-                                <input type="checkbox" name={`correct-answer`} value={opt} 
-                                    checked={(q.correctAnswer as string[]).includes(opt)} 
-                                    onChange={e => {
-                                        const currentAnswers = (q.correctAnswer as string[] || []);
-                                        const newAnswers = e.target.checked ? [...currentAnswers, opt] : currentAnswers.filter(a => a !== opt);
-                                        handleChange('correctAnswer', newAnswers);
-                                    }} />
-                                <input type="text" placeholder={`Option ${oIndex + 1}`} value={opt} onChange={e => handleOptionChange(oIndex, e.target.value)} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/>
-                                <button type="button" onClick={() => removeListItem(oIndex)} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.options && q.options.length <= 2}>
-                                    <XCircleIcon className="w-5 h-5" />
-                                </button>
-                            </div>
-                        ))}
-                        <button type="button" onClick={() => addListItem()} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addOption}</button>
-                    </div>
-                )}
-                 {q.type === QuestionType.TrueFalse && (
-                    <div className="flex gap-4">
-                        <label className="flex items-center"><input type="radio" name={`correct-answer`} value="True" checked={q.correctAnswer === 'True'} onChange={e => handleChange('correctAnswer', 'True')} className="mr-2" /> True</label>
-                        <label className="flex items-center"><input type="radio" name={`correct-answer`} value="False" checked={q.correctAnswer === 'False'} onChange={e => handleChange('correctAnswer', 'False')} className="mr-2" /> False</label>
-                    </div>
-                )}
-                 {q.type === QuestionType.TrueFalseWithJustification && (
-                    <div>
-                        <div className="flex gap-4 mb-2">
-                            <label className="flex items-center"><input type="radio" name={`correct-answer`} value="True" checked={q.correctAnswer === 'True'} onChange={e => handleChange('correctAnswer', 'True')} className="mr-2" /> True</label>
-                            <label className="flex items-center"><input type="radio" name={`correct-answer`} value="False" checked={q.correctAnswer === 'False'} onChange={e => handleChange('correctAnswer', 'False')} className="mr-2" /> False</label>
-                        </div>
-                        <textarea placeholder={t.modelJustification} value={q.correctJustification || ''} onChange={e => handleChange('correctJustification', e.target.value)} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full h-24" />
-                    </div>
-                )}
-                {(q.type === QuestionType.Essay || q.type === QuestionType.ShortAnswer) && (
-                    <textarea placeholder={t.modelAnswerHelp} value={q.correctAnswer as string} onChange={e => handleChange('correctAnswer', e.target.value)} className={`p-2 bg-white dark:bg-slate-600 rounded-md w-full ${q.type === QuestionType.ShortAnswer ? 'h-16' : 'h-24'}`} required />
-                )}
-                {q.type === QuestionType.Ordering && (
-                    <div className="space-y-2">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">{t.orderingHelp}</p>
-                         {q.options?.map((opt, oIndex) => (
-                            <div key={oIndex} className="flex items-center gap-2">
-                                <span className="text-slate-500">{oIndex+1}.</span>
-                                <input type="text" placeholder={`${t.addItem} ${oIndex + 1}`} value={opt} onChange={e => handleOptionChange(oIndex, e.target.value)} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/>
-                                <button type="button" onClick={() => removeListItem(oIndex)} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.options && q.options.length <= 2}>
-                                    <XCircleIcon className="w-5 h-5" />
-                                </button>
-                            </div>
-                        ))}
-                        <button type="button" onClick={() => addListItem()} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addItem}</button>
-                    </div>
-                )}
-                {q.type === QuestionType.Matching && (
-                    <div className="grid grid-cols-2 gap-6">
-                        <div>
-                            <h4 className="font-semibold mb-2">{t.prompts}</h4>
-                            {q.prompts?.map((prompt, pIndex) => (
-                                <div key={pIndex} className="flex items-center gap-2 mb-2">
-                                    <input type="text" placeholder={`${t.prompts} ${pIndex+1}`} value={prompt} onChange={e => handleOptionChange(pIndex, e.target.value, 'prompts')} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/>
-                                    <button type="button" onClick={() => removeListItem(pIndex, 'prompts')} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.prompts && q.prompts.length <= 1}><XCircleIcon className="w-5 h-5"/></button>
-                                </div>
-                            ))}
-                             <button type="button" onClick={() => addListItem('prompts')} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addPrompt}</button>
-                        </div>
-                        <div>
-                            <h4 className="font-semibold mb-2">{t.options}</h4>
-                            {q.options?.map((opt, oIndex) => (
-                                <div key={oIndex} className="flex items-center gap-2 mb-2">
-                                    <input type="text" placeholder={`${t.options} ${oIndex+1}`} value={opt} onChange={e => handleOptionChange(oIndex, e.target.value, 'options')} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/>
-                                    <button type="button" onClick={() => removeListItem(oIndex, 'options')} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.options && q.options.length <= 1}><XCircleIcon className="w-5 h-5"/></button>
-                                </div>
-                            ))}
-                             <button type="button" onClick={() => addListItem('options')} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addOption}</button>
-                        </div>
-                        <div className="col-span-2">
-                            <h4 className="font-semibold mb-2">{t.correctMatches}</h4>
-                            {q.prompts?.map((prompt, pIndex) => (
-                                <div key={pIndex} className="flex items-center gap-4 mb-2">
-                                    <span className="w-1/3 truncate" title={prompt}>{prompt || `${t.prompts} ${pIndex+1}`}</span>
-                                    <select value={(q.correctAnswer as string[])[pIndex] || ''} onChange={e => {
-                                        const newAnswers = [...(q.correctAnswer as string[])];
-                                        newAnswers[pIndex] = e.target.value;
-                                        handleChange('correctAnswer', newAnswers);
-                                    }} className="p-2 bg-white dark:bg-slate-600 rounded-md w-2/3">
-                                        <option value="" disabled>{t.selectMatch}</option>
-                                        {q.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                    </select>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
+                {q.type === QuestionType.MultipleChoice && (<div className="space-y-2">{q.options?.map((opt, oIndex) => (<div key={oIndex} className="flex items-center gap-2"><input type="radio" name={`correct-answer`} value={opt} checked={q.correctAnswer === opt} onChange={e => handleChange('correctAnswer', e.target.value)} /><input type="text" placeholder={`Option ${oIndex + 1}`} value={opt} onChange={e => handleOptionChange(oIndex, e.target.value)} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/><button type="button" onClick={() => removeListItem(oIndex)} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.options && q.options.length <= 2}><XCircleIcon className="w-5 h-5" /></button></div>))}<button type="button" onClick={() => addListItem()} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addOption}</button></div>)}
+                {q.type === QuestionType.MultipleSelect && (<div className="space-y-2">{q.options?.map((opt, oIndex) => (<div key={oIndex} className="flex items-center gap-2"><input type="checkbox" name={`correct-answer`} value={opt} checked={(q.correctAnswer as string[]).includes(opt)} onChange={e => { const currentAnswers = (q.correctAnswer as string[] || []); const newAnswers = e.target.checked ? [...currentAnswers, opt] : currentAnswers.filter(a => a !== opt); handleChange('correctAnswer', newAnswers); }} /><input type="text" placeholder={`Option ${oIndex + 1}`} value={opt} onChange={e => handleOptionChange(oIndex, e.target.value)} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/><button type="button" onClick={() => removeListItem(oIndex)} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.options && q.options.length <= 2}><XCircleIcon className="w-5 h-5" /></button></div>))}<button type="button" onClick={() => addListItem()} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addOption}</button></div>)}
+                {q.type === QuestionType.TrueFalse && (<div className="flex gap-4"><label className="flex items-center"><input type="radio" name={`correct-answer`} value="True" checked={q.correctAnswer === 'True'} onChange={e => handleChange('correctAnswer', 'True')} className="mr-2" /> True</label><label className="flex items-center"><input type="radio" name={`correct-answer`} value="False" checked={q.correctAnswer === 'False'} onChange={e => handleChange('correctAnswer', 'False')} className="mr-2" /> False</label></div>)}
+                {q.type === QuestionType.TrueFalseWithJustification && (<div><div className="flex gap-4 mb-2"><label className="flex items-center"><input type="radio" name={`correct-answer`} value="True" checked={q.correctAnswer === 'True'} onChange={e => handleChange('correctAnswer', 'True')} className="mr-2" /> True</label><label className="flex items-center"><input type="radio" name={`correct-answer`} value="False" checked={q.correctAnswer === 'False'} onChange={e => handleChange('correctAnswer', 'False')} className="mr-2" /> False</label></div><textarea placeholder={t.modelJustification} value={q.correctJustification || ''} onChange={e => handleChange('correctJustification', e.target.value)} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full h-24" /></div>)}
+                {(q.type === QuestionType.Essay || q.type === QuestionType.ShortAnswer) && (<textarea placeholder={t.modelAnswerHelp} value={q.correctAnswer as string} onChange={e => handleChange('correctAnswer', e.target.value)} className={`p-2 bg-white dark:bg-slate-600 rounded-md w-full ${q.type === QuestionType.ShortAnswer ? 'h-16' : 'h-24'}`} required />)}
+                {q.type === QuestionType.Ordering && (<div className="space-y-2"><p className="text-sm text-slate-500 dark:text-slate-400">{t.orderingHelp}</p>{q.options?.map((opt, oIndex) => (<div key={oIndex} className="flex items-center gap-2"><span className="text-slate-500">{oIndex+1}.</span><input type="text" placeholder={`${t.addItem} ${oIndex + 1}`} value={opt} onChange={e => handleOptionChange(oIndex, e.target.value)} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/><button type="button" onClick={() => removeListItem(oIndex)} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.options && q.options.length <= 2}><XCircleIcon className="w-5 h-5" /></button></div>))}<button type="button" onClick={() => addListItem()} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addItem}</button></div>)}
+                {q.type === QuestionType.Matching && (<div className="grid grid-cols-2 gap-6"><div><h4 className="font-semibold mb-2">{t.prompts}</h4>{q.prompts?.map((prompt, pIndex) => (<div key={pIndex} className="flex items-center gap-2 mb-2"><input type="text" placeholder={`${t.prompts} ${pIndex+1}`} value={prompt} onChange={e => handleOptionChange(pIndex, e.target.value, 'prompts')} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/><button type="button" onClick={() => removeListItem(pIndex, 'prompts')} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.prompts && q.prompts.length <= 1}><XCircleIcon className="w-5 h-5"/></button></div>))}<button type="button" onClick={() => addListItem('prompts')} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addPrompt}</button></div><div><h4 className="font-semibold mb-2">{t.options}</h4>{q.options?.map((opt, oIndex) => (<div key={oIndex} className="flex items-center gap-2 mb-2"><input type="text" placeholder={`${t.options} ${oIndex+1}`} value={opt} onChange={e => handleOptionChange(oIndex, e.target.value, 'options')} className="p-2 bg-white dark:bg-slate-600 rounded-md w-full" required/><button type="button" onClick={() => removeListItem(oIndex, 'options')} className="text-red-500 hover:text-red-600 disabled:opacity-50" disabled={q.options && q.options.length <= 1}><XCircleIcon className="w-5 h-5"/></button></div>))}<button type="button" onClick={() => addListItem('options')} className="text-sm text-blue-500 hover:text-blue-600 font-semibold mt-2">{t.addOption}</button></div><div className="col-span-2"><h4 className="font-semibold mb-2">{t.correctMatches}</h4>{q.prompts?.map((prompt, pIndex) => (<div key={pIndex} className="flex items-center gap-4 mb-2"><span className="w-1/3 truncate" title={prompt}>{prompt || `${t.prompts} ${pIndex+1}`}</span><select value={(q.correctAnswer as string[])[pIndex] || ''} onChange={e => { const newAnswers = [...(q.correctAnswer as string[])]; newAnswers[pIndex] = e.target.value; handleChange('correctAnswer', newAnswers); }} className="p-2 bg-white dark:bg-slate-600 rounded-md w-2/3"><option value="" disabled>{t.selectMatch}</option>{q.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>))}</div></div>)}
             </div>
           
           <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-slate-200 dark:border-slate-600">
