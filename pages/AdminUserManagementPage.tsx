@@ -1,9 +1,12 @@
 
+
+
 import React, { useState, useEffect } from 'react';
-import { getAllUsers } from '../services/mockApi';
+import { getAllUsers } from '../services/api';
 import { User, UserRole } from '../types';
 import { BarChartIcon, BookOpenIcon, UsersIcon, ShieldCheckIcon, SettingsIcon, EditIcon, TrashIcon, ClipboardListIcon, TagIcon } from '../components/icons';
-import { useLanguage } from '../App';
+// Fix: Import useLanguage from its context file.
+import { useLanguage } from '../contexts/LanguageContext';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';

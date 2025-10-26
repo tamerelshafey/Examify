@@ -1,107 +1,166 @@
-
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getExamDetails, submitExam } from '../services/mockApi';
-import { Exam, Question, QuestionType, StudentAnswer, ExamResult, Answer, ProctoringEvent } from '../types';
+import { getExamDetails, submitExam } from '../services/api';
+import { Exam, Question, QuestionType, StudentAnswer, ExamResult, Answer, ProctoringEvent, Language, ProctoringEventType } from '../types';
 import { ClockIcon, CheckCircleIcon, XCircleIcon, DownloadIcon } from '../components/icons';
-import { Language, useLanguage } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
+import { GoogleGenAI, LiveSession, LiveServerMessage, Modality, Blob, FunctionDeclaration, Type } from '@google/genai';
 
-type ProctoringAlert = {
-  message: string;
-  details: string;
-  severity: 'low' | 'medium' | 'high';
+// --- Audio Encoding/Decoding Helpers ---
+function encode(bytes: Uint8Array) {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// --- AI Proctoring Service ---
+const flagSuspiciousActivity: FunctionDeclaration = {
+  name: 'flag_suspicious_activity',
+  parameters: {
+    type: Type.OBJECT,
+    description: 'Flags a suspicious activity detected during the proctoring session.',
+    properties: {
+      activity_type: {
+        type: Type.STRING,
+        enum: ['looking_away', 'multiple_faces', 'mobile_phone_detected', 'unusual_noise', 'gaze_off_screen'],
+      },
+      confidence_score: { type: Type.NUMBER, description: 'Confidence score from 0.0 to 1.0.' },
+      severity: { type: Type.STRING, enum: ['low', 'medium', 'high'], description: 'The severity of the flagged event.' },
+      details: { type: Type.STRING, description: 'A brief description of what was detected.'}
+    },
+    required: ['activity_type', 'confidence_score', 'severity', 'details'],
+  },
 };
 
-const proctoringTranslations = {
-    en: {
-        rec: "REC",
-        accessDenied: "Camera/Mic access denied! Please enable permissions and refresh.",
-        alerts: {
-            lookAway: { message: "User looked away", details: "Looking away from the screen for too long.", severity: 'medium' },
-            multipleFaces: { message: "Multiple faces detected", details: "Another person may be in the room.", severity: 'high' },
-            noise: { message: "Unidentified noise", details: "Potential talking or background noise.", severity: 'low' },
-            phone: { message: "Phone detected", details: "Mobile device detected in the testing area.", severity: 'high' },
-            gaze: { message: "Gaze off-screen", details: "Eyes not focused on the exam content.", severity: 'low' }
-        }
-    },
-    ar: {
-        rec: "تسجيل",
-        accessDenied: "تم رفض الوصول للكاميرا/الميكروفون! يرجى تمكين الأذونات وتحديث الصفحة.",
-        alerts: {
-            lookAway: { message: "المستخدم نظر بعيدًا", details: "النظر بعيدًا عن الشاشة لفترة طويلة.", severity: 'medium' },
-            multipleFaces: { message: "تم اكتشاف وجوه متعددة", details: "قد يكون هناك شخص آخر في الغرفة.", severity: 'high' },
-            noise: { message: "ضوضاء غير محددة", details: "احتمال وجود حديث أو ضوضاء في الخلفية.", severity: 'low' },
-            phone: { message: "تم اكتشاف هاتف", details: "تم اكتشاف جهاز محمول في منطقة الاختبار.", severity: 'high' },
-            gaze: { message: "نظرة خارج الشاشة", details: "العيون ليست مركزة على محتوى الاختبار.", severity: 'high' }
-        }
-    }
-} as const;
-
-const ProctoringWindow: React.FC<{ isProctoringActive: boolean; lang: Language }> = ({ isProctoringActive, lang }) => {
+const useAIProctoring = (isActive: boolean, onEventDetected: (event: ProctoringEvent) => void, examStartTime: React.MutableRefObject<number | null>) => {
     const videoRef = useRef<HTMLVideoElement>(null);
-    const [alert, setAlert] = useState<ProctoringAlert | null>(null);
     const [cameraError, setCameraError] = useState<string | null>(null);
-    const alertTimeoutRef = useRef<number | null>(null);
-    const t = proctoringTranslations[lang];
+    const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+    const mediaStreamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const videoFrameIntervalRef = useRef<number | null>(null);
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+    const cleanup = () => {
+        streamRef.current?.getTracks().forEach(track => track.stop());
+        scriptProcessorRef.current?.disconnect();
+        mediaStreamSourceRef.current?.disconnect();
+        if (videoFrameIntervalRef.current) clearInterval(videoFrameIntervalRef.current);
+        streamRef.current = null;
+        scriptProcessorRef.current = null;
+        mediaStreamSourceRef.current = null;
+    };
 
     useEffect(() => {
-        let stream: MediaStream | null = null;
-        
-        const startCamera = async () => {
-            try {
-                setCameraError(null);
-                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                }
-            } catch (err) {
-                console.error("Error accessing camera/mic:", err);
-                setCameraError(t.accessDenied);
-            }
-        };
+        if (isActive) {
+            const startProctoring = async () => {
+                try {
+                    setCameraError(null);
+                    streamRef.current = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    if (videoRef.current) {
+                        videoRef.current.srcObject = streamRef.current;
+                    }
 
-        if (isProctoringActive) {
-            startCamera();
-            // Simulate AI alerts
-            alertTimeoutRef.current = window.setInterval(() => {
-                const alertKeys = Object.keys(t.alerts) as (keyof typeof t.alerts)[];
-                const randomKey = alertKeys[Math.floor(Math.random() * alertKeys.length)];
-                const randomAlert = t.alerts[randomKey];
-                setAlert(randomAlert);
-                setTimeout(() => setAlert(null), 5000); // More time to read
-            }, 20000);
+                    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                    sessionPromiseRef.current = ai.live.connect({
+                        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+                        config: {
+                            responseModalities: [Modality.AUDIO],
+                            systemInstruction: "You are an AI proctor monitoring a student during an online exam. Your sole responsibility is to watch and listen for suspicious activities. You must ONLY respond by calling the `flag_suspicious_activity` function when you detect one of the following: 1. The student is looking away from the screen for an extended period. 2. More than one face is visible. 3. A mobile phone is visible. 4. There is unusual background noise like talking. 5. The student's gaze is consistently off-screen. Do not engage in conversation. Only call the function.",
+                            tools: [{ functionDeclarations: [flagSuspiciousActivity] }],
+                        },
+                        callbacks: {
+                            onopen: () => {
+                                const anyWindow = window as any;
+                                audioContextRef.current = new (anyWindow.AudioContext || anyWindow.webkitAudioContext)({ sampleRate: 16000 });
+                                mediaStreamSourceRef.current = audioContextRef.current.createMediaStreamSource(streamRef.current!);
+                                scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+
+                                scriptProcessorRef.current.onaudioprocess = (audioProcessingEvent) => {
+                                    const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
+                                    const pcmBlob: Blob = {
+                                        data: encode(new Uint8Array(new Int16Array(inputData.map(x => x * 32768)).buffer)),
+                                        mimeType: 'audio/pcm;rate=16000',
+                                    };
+                                    sessionPromiseRef.current?.then(session => session.sendRealtimeInput({ media: pcmBlob }));
+                                };
+                                mediaStreamSourceRef.current.connect(scriptProcessorRef.current);
+                                scriptProcessorRef.current.connect(audioContextRef.current.destination);
+
+                                // Video frame streaming
+                                canvasRef.current = document.createElement('canvas');
+                                const ctx = canvasRef.current.getContext('2d');
+                                videoFrameIntervalRef.current = window.setInterval(() => {
+                                    if (ctx && videoRef.current && videoRef.current.readyState >= 2) {
+                                        canvasRef.current!.width = videoRef.current.videoWidth;
+                                        canvasRef.current!.height = videoRef.current.videoHeight;
+                                        ctx.drawImage(videoRef.current, 0, 0, videoRef.current.videoWidth, videoRef.current.videoHeight);
+                                        canvasRef.current!.toBlob(async (blob) => {
+                                            if (blob) {
+                                                const reader = new FileReader();
+                                                reader.onload = () => {
+                                                    const base64Data = (reader.result as string).split(',')[1];
+                                                    const imageBlob: Blob = { data: base64Data, mimeType: 'image/jpeg' };
+                                                    sessionPromiseRef.current?.then(session => session.sendRealtimeInput({ media: imageBlob }));
+                                                };
+                                                reader.readAsDataURL(blob);
+                                            }
+                                        }, 'image/jpeg', 0.5);
+                                    }
+                                }, 2000); // Send frame every 2 seconds
+                            },
+                            onmessage: (message: LiveServerMessage) => {
+                                if (message.toolCall?.functionCalls) {
+                                    for (const fc of message.toolCall.functionCalls) {
+                                        const { activity_type, confidence_score, severity, details } = fc.args;
+                                        onEventDetected({
+                                            type: activity_type as ProctoringEventType,
+                                            timestamp: Date.now() - (examStartTime.current ?? Date.now()),
+                                            severity: severity as 'low' | 'medium' | 'high',
+                                            details: `${details} (Confidence: ${(confidence_score * 100).toFixed(0)}%)`
+                                        });
+                                    }
+                                }
+                            },
+                            onerror: (e) => console.error("Proctoring error:", e),
+                            onclose: () => cleanup(),
+                        },
+                    });
+                    
+                } catch (err) {
+                    console.error("Error accessing camera/mic:", err);
+                    setCameraError("Camera/Mic access denied! Please enable permissions and refresh.");
+                }
+            };
+            startProctoring();
+        } else {
+            sessionPromiseRef.current?.then(session => session.close());
+            cleanup();
         }
 
         return () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            if (alertTimeoutRef.current) {
-               clearInterval(alertTimeoutRef.current);
-            }
+            sessionPromiseRef.current?.then(session => session.close());
+            cleanup();
         };
-    }, [isProctoringActive, t]);
+    }, [isActive, onEventDetected, examStartTime]);
 
-    const severityClasses: Record<ProctoringAlert['severity'], string> = {
-        low: 'bg-yellow-400 text-black',
-        medium: 'bg-orange-500 text-white',
-        high: 'bg-red-600 text-white',
-    };
+    return { videoRef, cameraError };
+};
 
+const ProctoringWindow: React.FC<{ videoRef: React.RefObject<HTMLVideoElement>; cameraError: string | null; lang: Language }> = ({ videoRef, cameraError, lang }) => {
+    const t = proctoringTranslations[lang];
     return (
-        <div className={`fixed bottom-4 ${lang === 'ar' ? 'left-4' : 'right-4'} w-52 h-40 bg-slate-900 rounded-lg shadow-2xl overflow-hidden border-2 border-slate-700 z-50`}>
+        <div className={`fixed top-4 ${lang === 'ar' ? 'left-4' : 'right-4'} w-52 h-40 bg-slate-900 rounded-lg shadow-2xl overflow-hidden border-2 border-slate-700 z-50`}>
             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover"></video>
             {!cameraError && (
                 <div className={`absolute top-1 ${lang === 'ar' ? 'right-1' : 'left-1'} bg-red-500 text-white px-2 py-0.5 rounded-full text-xs font-bold flex items-center`}>
                     <span className="w-2 h-2 bg-red-300 rounded-full me-1.5 animate-pulse"></span>
                     {t.rec}
-                </div>
-            )}
-            {alert && (
-                <div className={`absolute bottom-0 left-0 w-full p-2 text-xs text-center ${severityClasses[alert.severity]}`}>
-                    <p className="font-bold uppercase tracking-wide">{alert.message}</p>
-                    <p className="text-xs leading-tight mt-1">{alert.details}</p>
                 </div>
             )}
             {cameraError && 
@@ -112,6 +171,11 @@ const ProctoringWindow: React.FC<{ isProctoringActive: boolean; lang: Language }
         </div>
     );
 };
+
+const proctoringTranslations = {
+    en: { rec: "REC" },
+    ar: { rec: "تسجيل" }
+} as const;
 
 const translations = {
     en: {
@@ -188,6 +252,12 @@ const ExamTaker = () => {
     const { lang } = useLanguage();
     const t = translations[lang];
 
+     const handleEventDetected = useCallback((event: ProctoringEvent) => {
+        setProctoringEvents(prev => [...prev, event]);
+    }, []);
+
+    const { videoRef, cameraError } = useAIProctoring(examStarted && !result, handleEventDetected, examStartTime);
+
     useEffect(() => {
         if (!examId) return;
         const fetchExam = async () => {
@@ -220,7 +290,7 @@ const ExamTaker = () => {
 
         const handleVisibilityChange = () => {
             if (document.hidden) {
-                setProctoringEvents(prev => [...prev, { type: 'tab_switch', timestamp: Date.now() - (examStartTime.current ?? 0) }]);
+                setProctoringEvents(prev => [...prev, { type: ProctoringEventType.TabSwitch, timestamp: Date.now() - (examStartTime.current ?? 0), severity: 'medium', details: 'User switched to another tab or window.' }]);
             }
         };
 
@@ -237,7 +307,7 @@ const ExamTaker = () => {
     };
 
     const handlePaste = (questionId: string) => {
-        setProctoringEvents(prev => [...prev, { type: 'paste_content', timestamp: Date.now() - (examStartTime.current ?? 0), details: `Question ${questionId}` }]);
+        setProctoringEvents(prev => [...prev, { type: ProctoringEventType.PasteContent, timestamp: Date.now() - (examStartTime.current ?? 0), severity: 'high', details: `Pasted content in Question ${currentQuestionIndex + 1}` }]);
     };
 
     const handleDragSort = (questionId: string) => {
@@ -362,6 +432,33 @@ const ExamTaker = () => {
             </header>
 
             <main className="flex-grow container mx-auto p-8 flex flex-col items-center">
+                <div className="w-full max-w-4xl mb-6 bg-white dark:bg-slate-800 p-4 rounded-xl shadow-lg">
+                    <div className="flex flex-wrap gap-2">
+                        {exam.questions.map((q, index) => {
+                            const isAnswered = answers.hasOwnProperty(q.id);
+                            const isCurrent = currentQuestionIndex === index;
+                            let buttonClasses = 'w-8 h-8 flex items-center justify-center rounded-md font-bold text-sm transition-all duration-200 ';
+                            if (isCurrent) {
+                                buttonClasses += 'bg-primary-500 text-white ring-2 ring-offset-2 ring-primary-500 ring-offset-slate-100 dark:ring-offset-slate-900 shadow-lg';
+                            } else if (isAnswered) {
+                                buttonClasses += 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-500 hover:bg-slate-300 dark:hover:bg-slate-500';
+                            } else {
+                                buttonClasses += 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-600';
+                            }
+                            return (
+                                <button
+                                    key={q.id}
+                                    onClick={() => setCurrentQuestionIndex(index)}
+                                    className={buttonClasses}
+                                    aria-label={`Go to question ${index + 1}`}
+                                >
+                                    {index + 1}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
                 <div className="w-full max-w-4xl bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg">
                     <p className="text-sm text-slate-500 dark:text-slate-400">{t.question} {currentQuestionIndex + 1} {t.of} {exam.questions.length}</p>
                     <p className="text-2xl font-semibold my-4">{currentQuestion.text}</p>
@@ -474,7 +571,7 @@ const ExamTaker = () => {
                     )}
                 </div>
             </main>
-            <ProctoringWindow isProctoringActive={examStarted && !result} lang={lang}/>
+            <ProctoringWindow videoRef={videoRef} cameraError={cameraError} lang={lang}/>
         </div>
     );
 };

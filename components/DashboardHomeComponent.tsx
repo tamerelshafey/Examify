@@ -1,11 +1,9 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { UserRole } from '../types';
-import { getTeacherDashboardStats, getCorporateDashboardStats, getTrainingCompanyDashboardStats } from '../services/mockApi';
+import { getTeacherDashboardStats, getCorporateDashboardStats, getTrainingCompanyDashboardStats, getRecentActivity } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { BarChartIcon, BookOpenIcon, SparklesIcon, ClipboardListIcon, AlertTriangleIcon, CheckCircleIcon, UsersIcon, BriefcaseIcon, BuildingIcon } from './icons';
-import { useLanguage } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
 import LoadingSpinner from './LoadingSpinner';
 
 const translations = {
@@ -20,6 +18,7 @@ const translations = {
             action2: "Generate with AI",
             action3: "Question Bank",
             action4: "View Analytics",
+            quickActions: "Quick Actions",
         },
         corporate: {
             welcome: "Welcome, Innovate Corp.!",
@@ -31,6 +30,7 @@ const translations = {
             action2: "Generate with AI",
             action3: "Question Bank",
             action4: "View Analytics",
+            quickActions: "Quick Actions",
         },
         company: {
             welcome: "Welcome, Future Skills!",
@@ -42,6 +42,7 @@ const translations = {
             action2: "Generate with AI",
             action3: "Question Bank",
             action4: "View Analytics",
+            quickActions: "Quick Actions",
         },
         common: {
             recentActivity: "Recent Activity",
@@ -59,6 +60,7 @@ const translations = {
             action2: "إنشاء بالذكاء الاصطناعي",
             action3: "بنك الأسئلة",
             action4: "عرض التحليلات",
+            quickActions: "إجراءات سريعة",
         },
         corporate: {
             welcome: "أهلاً، Innovate Corp.!",
@@ -70,6 +72,7 @@ const translations = {
             action2: "إنشاء بالذكاء الاصطناعي",
             action3: "بنك الأسئلة",
             action4: "عرض التحليلات",
+            quickActions: "إجراءات سريعة",
         },
         company: {
             welcome: "أهلاً، Future Skills!",
@@ -81,6 +84,7 @@ const translations = {
             action2: "إنشاء بالذكاء الاصطناعي",
             action3: "بنك الأسئلة",
             action4: "عرض التحليلات",
+            quickActions: "إجراءات سريعة",
         },
         common: {
             recentActivity: "النشاط الأخير",
@@ -113,40 +117,56 @@ const ActionCard = ({ title, icon: Icon, onClick }: any) => (
 
 const DashboardHomeComponent: React.FC<{ userRole: UserRole }> = ({ userRole }) => {
     const [stats, setStats] = useState<any>(null);
+    const [activities, setActivities] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { lang } = useLanguage();
     const navigate = useNavigate();
-    const t = { ...translations[lang].common, ...translations[lang][userRole] };
+    
+    // Fallback to teacher if role is not one of the main dashboard roles
+    const validRole = [UserRole.Teacher, UserRole.Corporate, UserRole.TrainingCompany].includes(userRole) ? userRole : UserRole.Teacher;
+    const t = { ...translations[lang].common, ...translations[lang][validRole] };
 
     useEffect(() => {
-        const fetchStats = async () => {
+        const fetchDashboardData = async () => {
+            setLoading(true);
             try {
-                let data;
+                let statsPromise;
                 if (userRole === UserRole.Teacher) {
-                    data = await getTeacherDashboardStats();
+                    statsPromise = getTeacherDashboardStats();
                 } else if (userRole === UserRole.Corporate) {
-                    data = await getCorporateDashboardStats();
+                    statsPromise = getCorporateDashboardStats();
                 } else if (userRole === UserRole.TrainingCompany) {
-                    data = await getTrainingCompanyDashboardStats();
+                    statsPromise = getTrainingCompanyDashboardStats();
+                } else {
+                    statsPromise = Promise.resolve(null); // Default case
                 }
-                setStats(data);
+
+                const [statsData, activityData] = await Promise.all([
+                    statsPromise,
+                    getRecentActivity(userRole)
+                ]);
+
+                setStats(statsData);
+                setActivities(activityData);
             } catch (error) {
-                console.error("Failed to fetch dashboard stats:", error);
+                console.error("Failed to fetch dashboard data:", error);
             } finally {
                 setLoading(false);
             }
         };
 
-        fetchStats();
+        fetchDashboardData();
     }, [userRole]);
     
     const handleQuickAction = (action: string) => {
-        const basePaths = {
+        const basePaths: { [key in UserRole]?: string } = {
             [UserRole.Teacher]: 'teacher',
             [UserRole.Corporate]: 'corporate',
             [UserRole.TrainingCompany]: 'company',
         };
-        const basePath = basePaths[userRole] || 'teacher';
+        const basePath = basePaths[userRole];
+        if (!basePath) return;
+
         const examPath = userRole === UserRole.Corporate ? 'assessments' : 'exams';
 
         switch (action) {
@@ -189,12 +209,12 @@ const DashboardHomeComponent: React.FC<{ userRole: UserRole }> = ({ userRole }) 
         }
     };
     
-    const actionIcons = {
+    const actionIcons: { [key in UserRole]?: React.FC<any> } = {
         [UserRole.Teacher]: BookOpenIcon,
         [UserRole.Corporate]: BriefcaseIcon,
         [UserRole.TrainingCompany]: BuildingIcon,
     };
-
+    const ActionIcon = actionIcons[userRole] || BookOpenIcon;
 
     if (loading) {
         return <LoadingSpinner />;
@@ -212,7 +232,7 @@ const DashboardHomeComponent: React.FC<{ userRole: UserRole }> = ({ userRole }) 
             <div>
                 <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-4">{t.quickActions}</h3>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-                    <ActionCard title={t.action1} icon={actionIcons[userRole]} onClick={() => handleQuickAction('new_exam')} />
+                    <ActionCard title={t.action1} icon={ActionIcon} onClick={() => handleQuickAction('new_exam')} />
                     <ActionCard title={t.action2} icon={SparklesIcon} onClick={() => handleQuickAction('ai_exam')} />
                     <ActionCard title={t.action3} icon={ClipboardListIcon} onClick={() => handleQuickAction('bank')} />
                     <ActionCard title={t.action4} icon={BarChartIcon} onClick={() => handleQuickAction('analytics')} />
@@ -221,8 +241,24 @@ const DashboardHomeComponent: React.FC<{ userRole: UserRole }> = ({ userRole }) 
 
              <div>
                 <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-4">{t.recentActivity}</h3>
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md text-center">
-                    <p className="text-slate-500 dark:text-slate-400">{t.noActivity}</p>
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md">
+                    {activities.length === 0 ? (
+                        <p className="text-slate-500 dark:text-slate-400 text-center">{t.noActivity}</p>
+                    ) : (
+                        <ul className="space-y-4">
+                            {activities.map(activity => (
+                               <li key={activity.id} className="flex items-center">
+                                   <div className="flex-shrink-0 bg-green-100 dark:bg-green-900/50 p-2 rounded-full me-4">
+                                       <CheckCircleIcon className="w-5 h-5 text-green-500" />
+                                   </div>
+                                   <div>
+                                       <p className="text-sm text-slate-700 dark:text-slate-300">{activity.description}</p>
+                                       <p className="text-xs text-slate-500 dark:text-slate-400">{activity.relativeTime}</p>
+                                   </div>
+                               </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
             </div>
         </div>

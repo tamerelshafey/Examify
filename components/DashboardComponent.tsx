@@ -1,9 +1,11 @@
 
+
+
 import React, { useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createAIExamVariant } from '../services/mockApi';
+import { createAIExamVariant } from '../services/api';
 import { Exam, UserRole } from '../types';
-import { PlusCircleIcon, SparklesIcon, Wand2Icon, InboxIcon, ClockIcon, UsersIcon } from './icons';
+import { PlusCircleIcon, SparklesIcon, Wand2Icon, InboxIcon, ClockIcon, UsersIcon, UploadIcon } from './icons';
 import ExamFormModal from './ExamFormModal';
 import AIGenerateExamModal from './AIGenerateExamModal';
 import DashboardLayout from './DashboardLayout';
@@ -24,6 +26,7 @@ interface DashboardComponentProps {
 
     // Translations and labels
     translations: {
+        importFromText: string;
         generateExamAI: string;
         createNewExam: string;
         viewResults: string;
@@ -116,6 +119,15 @@ const DashboardComponent: React.FC<DashboardComponentProps> = ({
         }
     }
 
+    const getImportPath = () => {
+        switch(userRole) {
+            case UserRole.Teacher: return `/teacher/import`;
+            case UserRole.Corporate: return `/corporate/import`;
+            case UserRole.TrainingCompany: return `/company/import`;
+            default: return '/';
+        }
+    }
+
     const mainContent = () => {
         if (loading) {
             return <LoadingSpinner />;
@@ -178,6 +190,13 @@ const DashboardComponent: React.FC<DashboardComponentProps> = ({
                 <div className="flex justify-between items-center mb-8">
                     <div/>
                     <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => navigate(getImportPath())}
+                            className="flex items-center bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                        >
+                            <UploadIcon className="w-5 h-5 me-2" />
+                            {t.importFromText}
+                        </button>
                         <button
                             onClick={() => setIsAiModalOpen(true)}
                             className="flex items-center bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"

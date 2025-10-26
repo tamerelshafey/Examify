@@ -1,6 +1,7 @@
+
+
 import React, { useState } from 'react';
-import { LearningPath, PracticeQuestion } from '../types';
-import { Language } from '../App';
+import { LearningPath, PracticeQuestion, Language } from '../types';
 import { ChevronDownIcon, ChevronUpIcon, LinkIcon, Wand2Icon } from './icons';
 
 const translations = {

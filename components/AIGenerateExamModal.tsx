@@ -1,8 +1,11 @@
+
 import React, { useState } from 'react';
-import { generateFullExamWithAI } from '../services/mockApi';
+// Fix: Import from the correct AI service file.
+import { generateFullExamWithAI } from '../services/ai';
 import { Exam } from '../types';
 import { SparklesIcon, SpinnerIcon } from './icons';
-import { useLanguage } from '../App';
+// Fix: Import useLanguage from its context file.
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface AIGenerateExamModalProps {
   isOpen: boolean;

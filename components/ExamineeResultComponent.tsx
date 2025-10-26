@@ -1,14 +1,17 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { getExamResultDetails, gradeAnswerWithAI, checkPlagiarismWithAI, checkAuthenticityWithAI } from '../services/mockApi';
+import { getExamResultDetails } from '../services/api';
+import { gradeAnswerWithAI, checkPlagiarismWithAI, checkAuthenticityWithAI, generateAICertificateCommendation } from '../services/ai';
 import { Exam, ExamResult, Question, QuestionType, Answer, UserRole } from '../types';
 import { 
     BookOpenIcon, BarChartIcon, ClipboardListIcon, ArrowLeftIcon, CheckCircleIcon, XCircleIcon, 
-    SparklesIcon, SearchCheckIcon, ShieldCheckIcon, BriefcaseIcon, BuildingIcon 
+    SparklesIcon, SearchCheckIcon, ShieldCheckIcon, BriefcaseIcon, BuildingIcon, AwardIcon, SpinnerIcon 
 } from './icons';
-import { useLanguage, useTheme } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import DashboardLayout from './DashboardLayout';
+import CertificateModal from './CertificateModal';
+import { useNotification } from '../contexts/NotificationContext';
 
 // Translations
 const translations = {
@@ -18,6 +21,8 @@ const translations = {
         submissionReview: "Submission Review:",
         showingResultsFor: "Showing results for",
         viewProctoring: "View Proctoring Report",
+        generateCertificate: "Generate Certificate",
+        generatingCertificate: "Generating...",
         finalScore: "Final Score",
         correctAnswer: "Correct Answer:",
         gradeWithAI: "Grade with AI",
@@ -68,6 +73,8 @@ const translations = {
         submissionReview: "مراجعة التقديم:",
         showingResultsFor: "عرض نتائج لـ",
         viewProctoring: "عرض تقرير المراقبة",
+        generateCertificate: "إصدار شهادة",
+        generatingCertificate: "جاري الإنشاء...",
         finalScore: "الدرجة النهائية",
         correctAnswer: "الإجابة الصحيحة:",
         gradeWithAI: "تصحيح بالذكاء الاصطناعي",
@@ -105,7 +112,7 @@ const translations = {
         },
         company: {
             title: "للشركات",
-            courseExams: "اختبارات الدورة",
+            courseExams: "اختبارات الدورات",
             questionBank: "بنك الأسئلة",
             analytics: "التحليلات",
             backToResults: "العودة إلى كل النتائج",
@@ -161,8 +168,12 @@ const ExamineeResultComponent: React.FC<ExamineeResultComponentProps> = ({ userR
     const [aiGrades, setAiGrades] = useState<Record<string, { loading: boolean; score: number | null; feedback: string | null; error: string | null }>>({});
     const [plagiarismChecks, setPlagiarismChecks] = useState<Record<string, { loading: boolean; score: number | null; justification: string | null; sources: any[] | null; error: string | null }>>({});
     const [authenticityChecks, setAuthenticityChecks] = useState<Record<string, { loading: boolean; score: number | null; justification: string | null; error: string | null }>>({});
+    const [isCertificateModalOpen, setIsCertificateModalOpen] = useState(false);
+    const [aiCommendation, setAiCommendation] = useState('');
+    const [isGeneratingCertificate, setIsGeneratingCertificate] = useState(false);
     const { lang } = useLanguage();
     const { theme } = useTheme();
+    const { addNotification } = useNotification();
 
     const config = roleConfig[userRole];
     const roleSpecificTranslations = translations[lang][userRole] || translations[lang].teacher;
@@ -190,6 +201,25 @@ const ExamineeResultComponent: React.FC<ExamineeResultComponentProps> = ({ userR
         };
         fetchDetails();
     }, [resultId, examId, navigate, config.basePath]);
+    
+    const handleGenerateCertificate = async () => {
+        if (!reviewData) return;
+        setIsGeneratingCertificate(true);
+        try {
+            const scorePercentage = Math.round((reviewData.result.score / reviewData.result.totalPoints) * 100);
+            const { commendation } = await generateAICertificateCommendation({
+                examineeName: reviewData.result.examineeName,
+                examTitle: reviewData.exam.title,
+                scorePercentage: scorePercentage
+            });
+            setAiCommendation(commendation);
+            setIsCertificateModalOpen(true);
+        } catch (error) {
+            addNotification("Failed to generate AI commendation.", "error");
+        } finally {
+            setIsGeneratingCertificate(false);
+        }
+    };
 
     const handleAiGrade = async (question: Question, userAnswer: Answer) => {
         if (!question.id || typeof userAnswer !== 'string' || userAnswer.trim() === '') return;
@@ -280,6 +310,9 @@ const ExamineeResultComponent: React.FC<ExamineeResultComponentProps> = ({ userR
         const backPath = `${config.basePath}/exam/${examId}/results`;
         const proctoringPath = `${config.basePath}/exam/${examId}/result/${resultId}/proctoring`;
         
+        const percentage = Math.round((reviewData.result.score / reviewData.result.totalPoints) * 100);
+        const passed = percentage >= 70;
+
         return (
             <>
                 <div className="mb-6">
@@ -294,10 +327,22 @@ const ExamineeResultComponent: React.FC<ExamineeResultComponentProps> = ({ userR
                                 {t.showingResultsFor} <span className="font-semibold text-slate-700 dark:text-slate-300">{reviewData.result.examineeName}</span>
                             </p>
                         </div>
-                        <Link to={proctoringPath} className="flex items-center gap-2 text-sm font-semibold text-white bg-primary-500 hover:bg-primary-600 px-4 py-2 rounded-lg shadow-md transition-all">
-                            <ShieldCheckIcon className="w-5 h-5" />
-                            {t.viewProctoring}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                             {passed && (
+                                <button
+                                    onClick={handleGenerateCertificate}
+                                    disabled={isGeneratingCertificate}
+                                    className="flex items-center gap-2 text-sm font-semibold text-white bg-yellow-500 hover:bg-yellow-600 px-4 py-2 rounded-lg shadow-md transition-all disabled:opacity-50"
+                                >
+                                    {isGeneratingCertificate ? <SpinnerIcon className="w-5 h-5" /> : <AwardIcon className="w-5 h-5" />}
+                                    {isGeneratingCertificate ? t.generatingCertificate : t.generateCertificate}
+                                </button>
+                            )}
+                            <Link to={proctoringPath} className="flex items-center gap-2 text-sm font-semibold text-white bg-primary-500 hover:bg-primary-600 px-4 py-2 rounded-lg shadow-md transition-all">
+                                <ShieldCheckIcon className="w-5 h-5" />
+                                {t.viewProctoring}
+                            </Link>
+                        </div>
                     </div>
                 </div>
 
@@ -406,6 +451,18 @@ const ExamineeResultComponent: React.FC<ExamineeResultComponentProps> = ({ userR
             sidebarHeader={sidebarHeader}
         >
             {pageContent()}
+            {reviewData && (
+                <CertificateModal
+                    isOpen={isCertificateModalOpen}
+                    onClose={() => setIsCertificateModalOpen(false)}
+                    examineeName={reviewData.result.examineeName}
+                    examTitle={reviewData.exam.title}
+                    completionDate={reviewData.result.submittedAt}
+                    organizationName={theme.platformName}
+                    aiCommendation={aiCommendation}
+                    scorePercentage={Math.round((reviewData.result.score / reviewData.result.totalPoints) * 100)}
+                />
+            )}
         </DashboardLayout>
     );
 };

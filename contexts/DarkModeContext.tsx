@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 
 interface DarkModeContextType {
@@ -11,8 +10,11 @@ const DarkModeContext = createContext<DarkModeContextType | undefined>(undefined
 export const DarkModeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const savedMode = localStorage.getItem('darkMode');
-    // Default to dark mode if no preference is saved.
-    return savedMode ? JSON.parse(savedMode) : true;
+    if (savedMode !== null) {
+      return JSON.parse(savedMode);
+    }
+    // Default to user's system preference if no setting is saved
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
   useEffect(() => {

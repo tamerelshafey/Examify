@@ -1,50 +1,21 @@
-
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { getTeacherDashboardStats } from '../services/mockApi';
-import { BookOpenIcon, BarChartIcon, ClipboardListIcon, SparklesIcon, AlertTriangleIcon } from '../components/icons';
-import { useTheme, useLanguage } from '../App';
+import React from 'react';
+import { BookOpenIcon, BarChartIcon, ClipboardListIcon } from '../components/icons';
+import { useTheme } from '../contexts/ThemeContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import DashboardLayout from '../components/DashboardLayout';
-import LoadingSpinner from '../components/LoadingSpinner';
+import DashboardHomeComponent from '../components/DashboardHomeComponent';
 import { UserRole } from '../types';
-
-const translations = {
-    en: {
-        welcome: "Welcome back, Ali!",
-        welcomeDesc: "Here's a quick overview of your activity.",
-        stat1: "Total Exams",
-        stat2: "Average Score",
-        stat3: "Students At Risk",
-        action1: "Create New Exam",
-        action2: "Generate with AI",
-        action3: "Question Bank",
-        action4: "View Analytics",
-        recentActivity: "Recent Activity",
-        noActivity: "No recent activity to show.",
-    },
-    ar: {
-        welcome: "مرحباً بعودتك، علي!",
-        welcomeDesc: "إليك نظرة سريعة على نشاطك.",
-        stat1: "إجمالي الاختبارات",
-        stat2: "متوسط الدرجات",
-        stat3: "طلاب في خطر",
-        action1: "إنشاء اختبار جديد",
-        action2: "إنشاء بالذكاء الاصطناعي",
-        action3: "بنك الأسئلة",
-        action4: "عرض التحليلات",
-        recentActivity: "النشاط الأخير",
-        noActivity: "لا يوجد نشاط حديث لعرضه.",
-    }
-};
 
 const layoutTranslations = {
     en: {
+        title: "Teacher",
         dashboard: "Dashboard",
         myExams: "My Exams",
         questionBank: "Question Bank",
         analytics: "Analytics",
     },
     ar: {
+        title: "المعلم",
         dashboard: "لوحة التحكم",
         myExams: "اختباراتي",
         questionBank: "بنك الأسئلة",
@@ -52,63 +23,10 @@ const layoutTranslations = {
     }
 };
 
-const StatCard = ({ title, value, icon: Icon, colorClass, suffix = '' }: any) => (
-    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md flex items-center">
-        <div className={`p-3 rounded-full me-4 ${colorClass}`}>
-            <Icon className="w-6 h-6 text-white" />
-        </div>
-        <div>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{title}</p>
-            <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{value}{suffix}</p>
-        </div>
-    </div>
-);
-
-const ActionCard = ({ title, icon: Icon, onClick }: any) => (
-     <button onClick={onClick} className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center justify-center text-center">
-        <div className="p-4 bg-primary-100 dark:bg-primary-500/20 text-primary-600 dark:text-primary-400 rounded-full mb-4">
-            <Icon className="w-8 h-8" />
-        </div>
-        <p className="font-semibold text-slate-700 dark:text-slate-200">{title}</p>
-    </button>
-);
-
-
 const TeacherDashboard = () => {
     const { theme } = useTheme();
     const { lang } = useLanguage();
-    const navigate = useNavigate();
-    const [stats, setStats] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
-
-    const t_layout = {
-        ...layoutTranslations[lang],
-        title: `${theme.platformName} Teacher`
-    };
-    const t_content = translations[lang];
-
-    useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                const data = await getTeacherDashboardStats();
-                setStats(data);
-            } catch (error) {
-                console.error("Failed to fetch dashboard stats:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchStats();
-    }, []);
-
-    const handleQuickAction = (action: string) => {
-        switch (action) {
-            case 'new_exam': navigate('/teacher/exams'); break;
-            case 'ai_exam': navigate('/teacher/exams'); break;
-            case 'bank': navigate('/teacher/question-bank'); break;
-            case 'analytics': navigate('/teacher/analytics'); break;
-        }
-    };
+    const t_layout = layoutTranslations[lang];
 
     const navLinks = [
         { path: '/teacher', icon: BarChartIcon, label: t_layout.dashboard },
@@ -117,41 +35,7 @@ const TeacherDashboard = () => {
         { path: '/teacher/analytics', icon: BarChartIcon, label: t_layout.analytics },
     ];
 
-    const sidebarHeader = <h1 className="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-10">{t_layout.title}</h1>;
-
-    const pageContent = () => {
-        if (loading) return <LoadingSpinner />;
-        return (
-            <div className="space-y-8">
-                <div>
-                    <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100">{t_content.welcome}</h2>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">{t_content.welcomeDesc}</p>
-                </div>
-                {stats && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <StatCard title={t_content.stat1} value={stats.totalExams} icon={BookOpenIcon} colorClass="bg-primary-500" />
-                        <StatCard title={t_content.stat2} value={stats.averageScore} suffix="%" icon={BarChartIcon} colorClass="bg-teal-500" />
-                        <StatCard title={t_content.stat3} value={stats.atRiskStudents} icon={AlertTriangleIcon} colorClass="bg-red-500" />
-                    </div>
-                )}
-                <div>
-                    <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-4">{t_content.action4}</h3>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-                        <ActionCard title={t_content.action1} icon={BookOpenIcon} onClick={() => handleQuickAction('new_exam')} />
-                        <ActionCard title={t_content.action2} icon={SparklesIcon} onClick={() => handleQuickAction('ai_exam')} />
-                        <ActionCard title={t_content.action3} icon={ClipboardListIcon} onClick={() => handleQuickAction('bank')} />
-                        <ActionCard title={t_content.action4} icon={BarChartIcon} onClick={() => handleQuickAction('analytics')} />
-                    </div>
-                </div>
-                <div>
-                    <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-4">{t_content.recentActivity}</h3>
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md text-center">
-                        <p className="text-slate-500 dark:text-slate-400">{t_content.noActivity}</p>
-                    </div>
-                </div>
-            </div>
-        );
-    };
+    const sidebarHeader = <h1 className="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-10">{`${theme.platformName} ${t_layout.title}`}</h1>;
 
     return (
         <DashboardLayout
@@ -159,7 +43,7 @@ const TeacherDashboard = () => {
             sidebarHeader={sidebarHeader}
             pageTitle=""
         >
-            {pageContent()}
+            <DashboardHomeComponent userRole={UserRole.Teacher} />
         </DashboardLayout>
     );
 };

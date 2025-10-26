@@ -1,8 +1,11 @@
+
 import React, { useState } from 'react';
-import { generateQuestionsWithAI } from '../services/mockApi';
+// Fix: Import from the correct AI service file.
+import { generateQuestionsWithAI } from '../services/ai';
 import { Question, QuestionType } from '../types';
 import { SparklesIcon, SpinnerIcon } from './icons';
-import { useLanguage } from '../App';
+// Fix: Import useLanguage from its context file.
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface AIQuestionGeneratorModalProps {
   isOpen: boolean;

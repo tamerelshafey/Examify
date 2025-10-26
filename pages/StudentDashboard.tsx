@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getExamineeExams } from '../services/mockApi';
+import { getExamineeExams } from '../services/api';
 import { Exam } from '../types';
 import { BookOpenIcon, CheckCircleIcon, ClockIcon, UsersIcon } from '../components/icons';
 

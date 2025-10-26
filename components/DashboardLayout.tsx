@@ -1,10 +1,9 @@
-
-
 import React, { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { LogOutIcon, SunIcon, MoonIcon } from './icons';
 import { useAuth } from '../contexts/AuthContext';
-import { useLanguage, useTheme } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { useDarkMode } from '../contexts/DarkModeContext';
 
 interface NavLink {

@@ -1,8 +1,9 @@
 import React from 'react';
-import { getCorporateExams, createCorporateExam } from '../services/mockApi';
+import { getCorporateExams, createCorporateExam } from '../services/api';
 import { UserRole } from '../types';
 import { BriefcaseIcon, BarChartIcon, ClipboardListIcon } from '../components/icons';
-import { useLanguage, useTheme } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import DashboardComponent from '../components/DashboardComponent';
 
 const translations = {
@@ -12,6 +13,7 @@ const translations = {
         assessments: "Assessments",
         questionBank: "Question Bank",
         analytics: "Analytics",
+        importFromText: "Import from Text",
         assignNewTest: "Assign New Test",
         viewResults: "View Results",
         createVariant: "Create AI Variant",
@@ -27,6 +29,7 @@ const translations = {
         assessments: "التقييمات",
         questionBank: "بنك الأسئلة",
         analytics: "التحليلات",
+        importFromText: "استيراد من نص",
         assignNewTest: "تعيين اختبار جديد",
         viewResults: "عرض النتائج",
         createVariant: "إنشاء نسخة بالذكاء الاصطناعي",
@@ -64,6 +67,7 @@ const CorporateAssessmentsPage = () => {
             getExamsApi={getCorporateExams}
             createExamApi={createCorporateExam}
             translations={{
+                importFromText: t.importFromText,
                 generateExamAI: t.assignNewTest,
                 createNewExam: t.assignNewTest,
                 viewResults: t.viewResults,

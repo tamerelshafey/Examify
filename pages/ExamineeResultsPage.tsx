@@ -1,10 +1,11 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getExamineeResults } from '../services/mockApi';
+import { getExamineeResults } from '../services/api';
 import { ExamResult } from '../types';
 import { BookOpenIcon, CheckCircleIcon, EyeIcon, LogOutIcon } from '../components/icons';
-import { Language } from '../App';
+import { Language } from '../types';
 
 const translations = {
     en: {

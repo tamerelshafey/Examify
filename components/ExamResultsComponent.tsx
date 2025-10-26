@@ -1,146 +1,129 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { getExamDetails, getResultsForExam } from '../services/mockApi';
+
+
+import React, { useState, useEffect } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { getResultsForExam, getExamDetails } from '../services/api';
 import { Exam, ExamResult, UserRole } from '../types';
-import { 
-    BarChartIcon, BookOpenIcon, ClipboardListIcon, EyeIcon, TrendingUpIcon, 
-    UsersIcon, InboxIcon, BriefcaseIcon, BuildingIcon 
+import {
+    BookOpenIcon, BarChartIcon, ClipboardListIcon, EyeIcon, ArrowLeftIcon,
+    BriefcaseIcon, BuildingIcon, InboxIcon
 } from './icons';
-import { Language, useTheme, useLanguage } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import DashboardLayout from './DashboardLayout';
 import LoadingSpinner from './LoadingSpinner';
 import EmptyState from './EmptyState';
 
+// Translations
 const translations = {
     en: {
-        resultsFor: "Results for:",
-        averageScore: "Average Score",
-        highestScore: "Highest Score",
+        loading: "Loading results...",
+        noResultsTitle: "No Submissions Yet",
+        noResultsMessage: "No results have been submitted for this exam yet.",
+        backToExams: "Back to All Exams",
+        resultsFor: "Results for",
+        examinee: "Examinee",
         score: "Score",
         percentage: "Percentage",
-        submittedOn: "Submitted On",
+        submittedAt: "Submitted At",
         actions: "Actions",
-        viewDetails: "View Submission Details",
-        common: {
+        viewSubmission: "View Submission",
+        teacher: {
+            title: "Teacher",
+            dashboard: "Dashboard",
+            myExams: "My Exams",
             questionBank: "Question Bank",
             analytics: "Analytics",
         },
-        teacher: {
-            title: "Teacher",
-            myExams: "My Exams",
-            totalSubmissions: "Total Submissions",
-            studentName: "Student Name",
-            noSubmissionsTitle: "No Submissions Yet",
-            noSubmissionsMessage: "No students have submitted this exam yet. Check back later for results.",
-            examNotFound: "Exam not found.",
-        },
         corporate: {
             title: "Corporate Center",
-            skillLibrary: "Skill Library",
-            totalCandidates: "Total Candidates",
-            candidateName: "Candidate Name",
-            noSubmissionsTitle: "No Submissions Yet",
-            noSubmissionsMessage: "No candidates have submitted this assessment yet.",
-            assessmentNotFound: "Assessment not found.",
+            dashboard: "Dashboard",
+            assessments: "Assessments",
+            questionBank: "Question Bank",
+            analytics: "Analytics",
         },
         company: {
-            title: "for Companies",
+            title: "for Training Companies",
+            dashboard: "Dashboard",
             courseExams: "Course Exams",
-            totalTrainees: "Total Trainees",
-            traineeName: "Trainee Name",
-            noSubmissionsTitle: "No Submissions Yet",
-            noSubmissionsMessage: "No trainees have submitted this exam yet.",
-            examNotFound: "Exam not found.",
+            questionBank: "Question Bank",
+            analytics: "Analytics",
         }
     },
     ar: {
-        resultsFor: "نتائج اختبار:",
-        averageScore: "متوسط الدرجات",
-        highestScore: "أعلى درجة",
+        loading: "جاري تحميل النتائج...",
+        noResultsTitle: "لا توجد تقديمات بعد",
+        noResultsMessage: "لم يتم تقديم أي نتائج لهذا الاختبار بعد.",
+        backToExams: "العودة إلى كل الاختبارات",
+        resultsFor: "نتائج اختبار",
+        examinee: "الطالب",
         score: "الدرجة",
         percentage: "النسبة المئوية",
-        submittedOn: "تاريخ التقديم",
+        submittedAt: "تاريخ التقديم",
         actions: "الإجراءات",
-        viewDetails: "عرض تفاصيل التقديم",
-        common: {
+        viewSubmission: "عرض التقديم",
+        teacher: {
+            title: "المعلم",
+            dashboard: "لوحة التحكم",
+            myExams: "اختباراتي",
             questionBank: "بنك الأسئلة",
             analytics: "التحليلات",
         },
-        teacher: {
-            title: "المعلم",
-            myExams: "اختباراتي",
-            totalSubmissions: "إجمالي التقديمات",
-            studentName: "اسم الطالب",
-            noSubmissionsTitle: "لا توجد تقديمات بعد",
-            noSubmissionsMessage: "لم يقم أي طالب بتقديم هذا الاختبار بعد.",
-            examNotFound: "الاختبار غير موجود.",
-        },
         corporate: {
             title: "المركز المؤسسي",
-            skillLibrary: "مكتبة المهارات",
-            totalCandidates: "إجمالي المرشحين",
-            candidateName: "اسم المرشح",
-            noSubmissionsTitle: "لا توجد تقديمات بعد",
-            noSubmissionsMessage: "لم يقم أي مرشح بتقديم هذا التقييم بعد.",
-            assessmentNotFound: "التقييم غير موجود.",
+            dashboard: "لوحة التحكم",
+            assessments: "التقييمات",
+            questionBank: "بنك الأسئلة",
+            analytics: "التحليلات",
         },
         company: {
-            title: "للشركات",
-            courseExams: "اختبارات الدورة",
-            totalTrainees: "إجمالي المتدربين",
-            traineeName: "اسم المتدرب",
-            noSubmissionsTitle: "لا توجد تقديمات بعد",
-            noSubmissionsMessage: "لم يقم أي متدرب بتقديم هذا الاختبار بعد.",
-            examNotFound: "الاختبار غير موجود.",
+            title: "لشركات التدريب",
+            dashboard: "لوحة التحكم",
+            courseExams: "اختبارات الدورات",
+            questionBank: "بنك الأسئلة",
+            analytics: "التحليلات",
         }
     }
 };
 
-const StatCard = ({ icon: Icon, title, value, colorClass, suffix='', lang }: { icon: React.FC<any>, title: string, value: string | number, colorClass: string, suffix?: string, lang: Language }) => (
-    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md flex items-center">
-        <div className={`p-3 rounded-full ${lang === 'ar' ? 'ms-4' : 'me-4'} ${colorClass}`}>
-            <Icon className="w-6 h-6 text-white" />
-        </div>
-        <div>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{title}</p>
-            <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{value}{suffix}</p>
-        </div>
-    </div>
-);
-
-const roleConfig: any = {
+// Role-specific configuration
+const roleConfig = {
     [UserRole.Teacher]: {
         basePath: '/teacher',
+        examsPath: '/teacher/exams',
         navLinks: (t: any) => [
-            { path: '/teacher', icon: BookOpenIcon, label: t.teacher.myExams },
-            { path: '/teacher/question-bank', icon: ClipboardListIcon, label: t.common.questionBank },
-            { path: '/teacher/analytics', icon: BarChartIcon, label: t.common.analytics },
+            { path: '/teacher', icon: BarChartIcon, label: t.dashboard },
+            { path: '/teacher/exams', icon: BookOpenIcon, label: t.myExams },
+            { path: '/teacher/question-bank', icon: ClipboardListIcon, label: t.questionBank },
+            { path: '/teacher/analytics', icon: BarChartIcon, label: t.analytics },
         ],
-        translations: (t: any) => ({ ...t, ...t.teacher, examineeName: t.teacher.studentName, totalSubmissions: t.teacher.totalSubmissions }),
-        sidebarTitle: (t: any) => t.teacher.title
+        getLabels: (t: any) => t.teacher,
     },
     [UserRole.Corporate]: {
         basePath: '/corporate',
+        examsPath: '/corporate/assessments',
         navLinks: (t: any) => [
-            { path: '/corporate', icon: BriefcaseIcon, label: t.corporate.skillLibrary },
-            { path: '/corporate/question-bank', icon: ClipboardListIcon, label: t.common.questionBank },
-            { path: '/corporate/analytics', icon: BarChartIcon, label: t.common.analytics },
+            { path: '/corporate', icon: BarChartIcon, label: t.dashboard },
+            { path: '/corporate/assessments', icon: BriefcaseIcon, label: t.assessments },
+            { path: '/corporate/question-bank', icon: ClipboardListIcon, label: t.questionBank },
+            { path: '/corporate/analytics', icon: BarChartIcon, label: t.analytics },
         ],
-        translations: (t: any) => ({ ...t, ...t.corporate, examineeName: t.corporate.candidateName, totalSubmissions: t.corporate.totalCandidates }),
-        sidebarTitle: (t: any) => t.corporate.title
+        getLabels: (t: any) => t.corporate,
     },
     [UserRole.TrainingCompany]: {
         basePath: '/company',
+        examsPath: '/company/exams',
         navLinks: (t: any) => [
-            { path: '/company', icon: BuildingIcon, label: t.company.courseExams },
-            { path: '/company/question-bank', icon: ClipboardListIcon, label: t.common.questionBank },
-            { path: '/company/analytics', icon: BarChartIcon, label: t.common.analytics },
+            { path: '/company', icon: BarChartIcon, label: t.dashboard },
+            { path: '/company/exams', icon: BuildingIcon, label: t.courseExams },
+            { path: '/company/question-bank', icon: ClipboardListIcon, label: t.questionBank },
+            { path: '/company/analytics', icon: BarChartIcon, label: t.analytics },
         ],
-        translations: (t: any) => ({ ...t, ...t.company, examineeName: t.company.traineeName, totalSubmissions: t.company.totalTrainees }),
-        sidebarTitle: (t: any) => t.company.title
+        getLabels: (t: any) => t.company,
     },
 };
+
 
 interface ExamResultsComponentProps {
     userRole: UserRole.Teacher | UserRole.Corporate | UserRole.TrainingCompany;
@@ -148,110 +131,112 @@ interface ExamResultsComponentProps {
 
 const ExamResultsComponent: React.FC<ExamResultsComponentProps> = ({ userRole }) => {
     const { examId } = useParams<{ examId: string }>();
-    const [exam, setExam] = useState<Exam | null>(null);
+    const navigate = useNavigate();
     const [results, setResults] = useState<ExamResult[]>([]);
+    const [exam, setExam] = useState<Exam | null>(null);
     const [loading, setLoading] = useState(true);
-    const { theme } = useTheme();
     const { lang } = useLanguage();
+    const { theme } = useTheme();
 
     const config = roleConfig[userRole];
-    const t = config.translations({ ...translations[lang], common: translations[lang].common });
-    const navLinks = config.navLinks({ ...translations[lang].common, ...translations[lang][userRole]});
-    
+    const roleSpecificTranslations = config.getLabels(translations[lang]);
+    const t = { ...translations[lang], ...roleSpecificTranslations };
+    const navLinks = config.navLinks(t);
+
+    const sidebarHeader = <h1 className="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-10">{theme.platformName} {t.title}</h1>;
+
+
     useEffect(() => {
         if (!examId) return;
 
         const fetchResults = async () => {
+            setLoading(true);
             try {
-                setLoading(true);
-                const [examDetails, examResults] = await Promise.all([
+                const [examData, resultsData] = await Promise.all([
                     getExamDetails(examId),
                     getResultsForExam(examId)
                 ]);
-                setExam(examDetails || null);
-                setResults(examResults);
+
+                if (examData) {
+                    setExam(examData);
+                    setResults(resultsData);
+                } else {
+                    navigate(config.examsPath);
+                }
             } catch (error) {
                 console.error("Failed to fetch exam results:", error);
             } finally {
                 setLoading(false);
             }
         };
+
         fetchResults();
-    }, [examId]);
+    }, [examId, navigate, config.examsPath]);
 
-    const analytics = useMemo(() => ({
-        submissions: results.length,
-        averageScore: results.length > 0 ? (results.reduce((acc, r) => acc + (r.score / r.totalPoints), 0) / results.length * 100).toFixed(1) : 0,
-        highestScore: results.length > 0 ? Math.max(...results.map(r => r.score)) : 0,
-    }), [results]);
+    const getPerformanceColor = (percentage: number) => {
+        if (percentage >= 80) return 'text-green-500';
+        if (percentage >= 50) return 'text-yellow-500';
+        return 'text-red-500';
+    };
 
-    const pageContent = () => {
-        if (loading) return <LoadingSpinner />;
-        if (!exam) return <p>{t.examNotFound || t.assessmentNotFound}</p>;
-        
+    const mainContent = () => {
+        if (loading) {
+            return <LoadingSpinner />;
+        }
         if (results.length === 0) {
-            return <EmptyState icon={InboxIcon} title={t.noSubmissionsTitle} message={t.noSubmissionsMessage} />;
+            return <EmptyState icon={InboxIcon} title={t.noResultsTitle} message={t.noResultsMessage} />;
         }
 
-        const totalPoints = results.length > 0 ? results[0].totalPoints : exam.questions.reduce((total, q) => total + q.points, 0);
-
         return (
-            <>
-                <p className="text-slate-500 dark:text-slate-400 -mt-6 mb-8">{exam.description}</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                   <StatCard icon={UsersIcon} title={t.totalSubmissions} value={analytics.submissions} colorClass="bg-primary-500" lang={lang} />
-                   <StatCard icon={BarChartIcon} title={t.averageScore} value={analytics.averageScore} suffix="%" colorClass="bg-teal-500" lang={lang} />
-                   <StatCard icon={TrendingUpIcon} title={t.highestScore} value={`${analytics.highestScore} / ${totalPoints}`} colorClass="bg-purple-500" lang={lang} />
-                </div>
-                
-                <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg overflow-x-auto">
-                   <table className="w-full text-sm text-left rtl:text-right text-slate-500 dark:text-slate-400">
-                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
-                            <tr>
-                                <th scope="col" className="px-6 py-3">{t.examineeName}</th>
-                                <th scope="col" className="px-6 py-3">{t.score}</th>
-                                <th scope="col" className="px-6 py-3">{t.percentage}</th>
-                                <th scope="col" className="px-6 py-3">{t.submittedOn}</th>
-                                <th scope="col" className="px-6 py-3">{t.actions}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {results.map(result => {
-                              const percentage = (result.score / result.totalPoints * 100).toFixed(1);
-                              return (
+            <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg overflow-x-auto">
+                <table className="w-full text-sm text-left rtl:text-right text-slate-500 dark:text-slate-400">
+                    <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                        <tr>
+                            <th scope="col" className="px-6 py-3">{t.examinee}</th>
+                            <th scope="col" className="px-6 py-3">{t.score}</th>
+                            <th scope="col" className="px-6 py-3">{t.percentage}</th>
+                            <th scope="col" className="px-6 py-3">{t.submittedAt}</th>
+                            <th scope="col" className="px-6 py-3">{t.actions}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {results.map(result => {
+                            const percentage = Math.round((result.score / result.totalPoints) * 100);
+                            const resultPath = `${config.basePath}/exam/${examId}/result/${result.id}`;
+                            return (
                                 <tr key={result.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
                                     <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap dark:text-white">{result.examineeName}</td>
                                     <td className="px-6 py-4">{result.score} / {result.totalPoints}</td>
+                                    <td className={`px-6 py-4 font-bold ${getPerformanceColor(percentage)}`}>{percentage}%</td>
+                                    <td className="px-6 py-4">{result.submittedAt.toLocaleDateString()}</td>
                                     <td className="px-6 py-4">
-                                        <div className="flex items-center">
-                                            <div className="w-20 bg-slate-200 rounded-full h-2.5 dark:bg-slate-700 me-2">
-                                                <div className="bg-primary-500 h-2.5 rounded-full" style={{width: `${percentage}%`}}></div>
-                                            </div>
-                                            <span>{percentage}%</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">{result.submittedAt.toLocaleString()}</td>
-                                    <td className="px-6 py-4">
-                                        <Link to={`${config.basePath}/exam/${examId}/result/${result.id}`} className="p-2 inline-block text-primary-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full" title={t.viewDetails}>
+                                        <Link to={resultPath} className="p-2 inline-block text-primary-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full" title={t.viewSubmission}>
                                             <EyeIcon className="w-5 h-5"/>
                                         </Link>
                                     </td>
                                 </tr>
-                            )})}
-                        </tbody>
-                   </table>
-                </div>
-            </>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
         );
-    }
+    };
 
     return (
         <DashboardLayout
             navLinks={navLinks}
-            pageTitle={loading ? "" : `${t.resultsFor} ${exam?.title}`}
-            sidebarHeader={<h1 className="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-10">{theme.platformName} {config.sidebarTitle(translations[lang])}</h1>}
+            sidebarHeader={sidebarHeader}
+            pageTitle=""
         >
-            {pageContent()}
+            <div className="mb-6">
+                <Link to={config.examsPath} className="flex items-center text-sm text-primary-500 hover:underline mb-4">
+                    <ArrowLeftIcon className="w-4 h-4 me-1" />
+                    {t.backToExams}
+                </Link>
+                <h2 className="text-3xl font-bold">{t.resultsFor} "{exam?.title}"</h2>
+            </div>
+            {mainContent()}
         </DashboardLayout>
     );
 };

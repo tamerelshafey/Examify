@@ -3,8 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { Question, QuestionType } from '../types';
 import { XCircleIcon, Wand2Icon, SpinnerIcon, LightbulbIcon } from './icons';
-import { getAIQuestionSuggestions, getCategories, analyzeQuestionWithAI } from '../services/mockApi';
-import { useLanguage } from '../App';
+// Fix: Split API calls into their correct modules.
+import { getAIQuestionSuggestions, analyzeQuestionWithAI } from '../services/ai';
+import { getStructuredCategories } from '../services/api';
+// Fix: Import useLanguage from its context file.
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface QuestionFormModalProps {
   isOpen: boolean;
@@ -23,10 +26,12 @@ const translations = {
         questionType: "Question Type",
         points: "Points",
         tags: "Tags (comma-separated)",
-        category: "Category",
-        subCategory: "Subcategory",
+        topLevelCategory: "Top-level Category",
+        category: "Specialized Category",
+        subCategory: "Field of Study",
+        selectTopLevel: "Select Top-level",
         selectCategory: "Select Category",
-        selectSubCategory: "Select Subcategory",
+        selectSubCategory: "Select Field",
         answerConfig: "Answer Configuration",
         addOption: "Add Option",
         addItem: "Add Item",
@@ -57,10 +62,12 @@ const translations = {
         questionType: "نوع السؤال",
         points: "النقاط",
         tags: "الوسوم (مفصولة بفاصلة)",
-        category: "الفئة",
-        subCategory: "المجال",
-        selectCategory: "اختر فئة",
-        selectSubCategory: "اختر مجال",
+        topLevelCategory: "الفئة العليا",
+        category: "الفئة المتخصصة",
+        subCategory: "مجال التخصص",
+        selectTopLevel: "اختر الفئة العليا",
+        selectCategory: "اختر الفئة المتخصصة",
+        selectSubCategory: "اختر مجال التخصص",
         answerConfig: "إعدادات الإجابة",
         addOption: "إضافة خيار",
         addItem: "إضافة عنصر",
@@ -97,22 +104,38 @@ const DEFAULT_QUESTION: EditableQuestion = {
     tags: [],
 };
 
+const findTopLevelCategory = (specializedCategory: string, structuredCategories: Record<string, Record<string, string[]>>) => {
+    for (const topLevel in structuredCategories) {
+        if (Object.keys(structuredCategories[topLevel]).includes(specializedCategory)) {
+            return topLevel;
+        }
+    }
+    return '';
+};
+
+
 const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, onSave, question }) => {
   const [formData, setFormData] = useState<EditableQuestion | Question>(DEFAULT_QUESTION);
   const [aiLoading, setAiLoading] = useState<'assist' | 'analyze' | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
-  const [categories, setCategories] = useState<Record<string, string[]>>({});
+  const [categories, setCategories] = useState<Record<string, Record<string, string[]>>>({});
+  const [selectedTopLevel, setSelectedTopLevel] = useState('');
   const { lang } = useLanguage();
   const t = translations[lang];
 
   useEffect(() => {
     if (isOpen) {
         const fetchCats = async () => {
-            const data = await getCategories();
+            const data = await getStructuredCategories();
             setCategories(data);
+            if (question) {
+                const topLevel = findTopLevelCategory(question.category, data);
+                setSelectedTopLevel(topLevel);
+            }
         };
         fetchCats();
         setFormData(question ? { ...question } : DEFAULT_QUESTION);
+        if(!question) setSelectedTopLevel('');
         setAnalysisResult(null);
     }
   }, [isOpen, question]);
@@ -191,10 +214,15 @@ const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, 
 
   const handleAiAnalyze = async () => {
     if (formData.text.length < 20) return;
+    const flatCategories: Record<string, string[]> = {};
+    Object.values(categories).forEach(specializedGroup => {
+        Object.assign(flatCategories, specializedGroup);
+    });
+
     setAiLoading('analyze');
     setAnalysisResult(null);
     try {
-        const result = await analyzeQuestionWithAI({ questionText: formData.text, existingCategories: categories });
+        const result = await analyzeQuestionWithAI({ questionText: formData.text, existingCategories: flatCategories });
         setAnalysisResult(result);
     } catch (error) {
         alert("AI analysis failed. Please try again.");
@@ -243,7 +271,7 @@ const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, 
                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">{t.aiAnalysis.category}:</p>
                         <span className="text-sm font-mono bg-slate-200 dark:bg-slate-600 px-2 py-0.5 rounded">{analysisResult.category} &gt; {analysisResult.subCategory}</span>
-                        <button onClick={() => { handleChange('category', analysisResult.category); handleChange('subCategory', analysisResult.subCategory); }} type="button" className="text-xs font-bold text-primary-500 hover:underline">{t.aiAnalysis.apply}</button>
+                        <button onClick={() => { handleChange('category', analysisResult.category); handleChange('subCategory', analysisResult.subCategory); setSelectedTopLevel(findTopLevelCategory(analysisResult.category, categories)) }} type="button" className="text-xs font-bold text-primary-500 hover:underline">{t.aiAnalysis.apply}</button>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">{t.aiAnalysis.tags}:</p>
@@ -256,10 +284,14 @@ const QuestionFormModal: React.FC<QuestionFormModalProps> = ({ isOpen, onClose, 
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.category}</label><select value={q.category} onChange={e => handleChange('category', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" required><option value="" disabled>{t.selectCategory}</option>{Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
-                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.subCategory}</label><select value={q.subCategory} onChange={e => handleChange('subCategory', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" disabled={!q.category} required><option value="" disabled>{t.selectSubCategory}</option>{(categories[q.category] || []).map(sub => <option key={sub} value={sub}>{sub}</option>)}</select></div>
-                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.questionType}</label><select value={q.type} onChange={e => handleTypeChange(e.target.value as QuestionType)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full">{Object.values(QuestionType).map(type => (<option key={type} value={type}>{type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>))}</select></div>
+                 <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.questionType}</label><select value={q.type} onChange={e => handleTypeChange(e.target.value as QuestionType)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full">{Object.values(QuestionType).map(type => (<option key={type} value={type}>{type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>))}</select></div>
                 <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.points}</label><input type="number" placeholder="Points" value={q.points} onChange={e => handleChange('points', parseInt(e.target.value))} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" required /></div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.topLevelCategory}</label><select value={selectedTopLevel} onChange={e => { setSelectedTopLevel(e.target.value); handleChange('category', ''); }} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" required><option value="" disabled>{t.selectTopLevel}</option>{Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
+                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.category}</label><select value={q.category} onChange={e => handleChange('category', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" disabled={!selectedTopLevel} required><option value="" disabled>{t.selectCategory}</option>{Object.keys(categories[selectedTopLevel] || {}).map(sub => <option key={sub} value={sub}>{sub}</option>)}</select></div>
+                <div><label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.subCategory}</label><select value={q.subCategory} onChange={e => handleChange('subCategory', e.target.value)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-md w-full" disabled={!q.category} required><option value="" disabled>{t.selectSubCategory}</option>{(categories[selectedTopLevel]?.[q.category] || []).map(field => <option key={field} value={field}>{field}</option>)}</select></div>
             </div>
 
             <div className="p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">

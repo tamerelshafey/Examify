@@ -1,7 +1,7 @@
-
 import React, { useState } from 'react';
 import { BarChartIcon, BookOpenIcon, UsersIcon, ShieldCheckIcon, SettingsIcon, ClipboardListIcon, TagIcon } from '../components/icons';
-import { useLanguage, useTheme } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import DashboardLayout from '../components/DashboardLayout';
 
 const translations = {
@@ -39,7 +39,7 @@ const translations = {
     }
 };
 
-const SettingSection = ({ title, description, children }: { title: string, description: string, children: React.ReactNode }) => (
+const SettingSection = ({ title, description, children }: { title: string, description: string, children?: React.ReactNode }) => (
     <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg p-6">
         <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{title}</h3>
         <p className="text-slate-500 dark:text-slate-400 mt-1 mb-4">{description}</p>

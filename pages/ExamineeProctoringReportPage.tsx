@@ -1,10 +1,13 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { getExamResultDetails, analyzeProctoringSessionWithAI } from '../services/mockApi';
-import { Exam, ExamResult } from '../types';
+import { getExamResultDetails } from '../services/api';
+import { analyzeProctoringSessionWithAI } from '../services/ai';
+import { Exam, ExamResult, Language } from '../types';
 import { BookOpenIcon, CheckCircleIcon, ArrowLeftIcon, PlayCircleIcon } from '../components/icons';
-import { Language, useLanguage, useTheme } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingSpinner from '../components/LoadingSpinner';
 

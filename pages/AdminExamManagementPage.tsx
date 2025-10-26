@@ -1,9 +1,11 @@
 
+
 import React, { useState, useEffect } from 'react';
-import { getAllExamsForAdmin, deleteExamAsAdmin } from '../services/mockApi';
+import { getAllExamsForAdmin, deleteExamAsAdmin } from '../services/api';
 import { Exam, UserRole } from '../types';
 import { BarChartIcon, BookOpenIcon, UsersIcon, ShieldCheckIcon, SettingsIcon, EyeIcon, TrashIcon, ClipboardListIcon, TagIcon } from '../components/icons';
-import { useLanguage } from '../App';
+// Fix: Import useLanguage from its context file.
+import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -86,6 +88,7 @@ const AdminExamManagementPage = () => {
         { path: '/admin/settings', icon: SettingsIcon, label: t.settings },
     ];
 
+    // Fix: Completed the roleColors object to satisfy the Record<UserRole, string> type.
     const roleColors: Record<UserRole, string> = {
         [UserRole.Teacher]: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
         [UserRole.Corporate]: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300',
@@ -101,66 +104,63 @@ const AdminExamManagementPage = () => {
             setExams(data);
         } catch (error) {
             console.error("Failed to fetch exams:", error);
+            addNotification("Failed to load exams.", "error");
         } finally {
             setLoading(false);
         }
     };
-    
+
     useEffect(() => {
         fetchExams();
     }, []);
 
-    const handleDelete = async (examId: string, examTitle: string) => {
-        if (window.confirm(t.confirmDelete(examTitle))) {
+    const handleDelete = async (examId: string, title: string) => {
+        if (window.confirm(t.confirmDelete(title))) {
             try {
                 await deleteExamAsAdmin(examId);
-                addNotification(t.deleteSuccess, 'success');
-                fetchExams();
+                addNotification(t.deleteSuccess, "success");
+                await fetchExams(); // Re-fetch exams list
             } catch (error) {
-                 addNotification(t.deleteError, 'error');
-                console.error(error);
+                console.error("Failed to delete exam:", error);
+                addNotification(t.deleteError, "error");
             }
         }
     };
 
     const pageContent = () => {
-      if (loading) {
-        return <LoadingSpinner />;
-      }
-      if (exams.length === 0) {
-        return <EmptyState icon={BookOpenIcon} title={t.noExamsTitle} message={t.noExamsMessage} />;
-      }
-      return (
-        <table className="w-full text-sm text-left rtl:text-right text-slate-500 dark:text-slate-400">
-            <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
-                <tr>
-                    <th scope="col" className="px-6 py-3">{t.table.title}</th>
-                    <th scope="col" className="px-6 py-3">{t.table.createdBy}</th>
-                    <th scope="col" className="px-6 py-3">{t.table.questions}</th>
-                    <th scope="col" className="px-6 py-3">{t.table.difficulty}</th>
-                    <th scope="col" className="px-6 py-3">{t.table.actions}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {exams.map(exam => (
-                    <tr key={exam.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
-                        <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap dark:text-white">{exam.title}</td>
-                        <td className="px-6 py-4">
-                            <span className={`px-2 py-1 font-semibold leading-tight rounded-full text-xs ${roleColors[exam.createdBy]}`}>
-                                {t.roles[exam.createdBy]}
-                            </span>
-                        </td>
-                        <td className="px-6 py-4">{exam.questionCount}</td>
-                        <td className="px-6 py-4">{exam.difficulty}</td>
-                        <td className="px-6 py-4 flex items-center space-x-2">
-                            <button className="p-2 text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"><EyeIcon className="w-4 h-4"/></button>
-                            <button onClick={() => handleDelete(exam.id, exam.title)} className="p-2 text-red-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"><TrashIcon className="w-4 h-4"/></button>
-                        </td>
+        if (loading) return <LoadingSpinner />;
+        if (exams.length === 0) return <EmptyState icon={BookOpenIcon} title={t.noExamsTitle} message={t.noExamsMessage} />;
+        return (
+            <table className="w-full text-sm text-left rtl:text-right text-slate-500 dark:text-slate-400">
+                <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                    <tr>
+                        <th scope="col" className="px-6 py-3">{t.table.title}</th>
+                        <th scope="col" className="px-6 py-3">{t.table.createdBy}</th>
+                        <th scope="col" className="px-6 py-3">{t.table.questions}</th>
+                        <th scope="col" className="px-6 py-3">{t.table.difficulty}</th>
+                        <th scope="col" className="px-6 py-3">{t.table.actions}</th>
                     </tr>
-                ))}
-            </tbody>
-        </table>
-      );
+                </thead>
+                <tbody>
+                    {exams.map(exam => (
+                        <tr key={exam.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                            <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap dark:text-white">{exam.title}</td>
+                            <td className="px-6 py-4">
+                                <span className={`px-2 py-1 font-semibold leading-tight rounded-full text-xs ${roleColors[exam.createdBy]}`}>
+                                    {t.roles[exam.createdBy]}
+                                </span>
+                            </td>
+                            <td className="px-6 py-4">{exam.questionCount}</td>
+                            <td className="px-6 py-4">{exam.difficulty}</td>
+                            <td className="px-6 py-4 flex items-center space-x-2">
+                                <button className="p-2 text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"><EyeIcon className="w-4 h-4"/></button>
+                                <button onClick={() => handleDelete(exam.id, exam.title)} className="p-2 text-red-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"><TrashIcon className="w-4 h-4"/></button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
     }
   
     return (
@@ -174,7 +174,7 @@ const AdminExamManagementPage = () => {
             }
         >
             <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg overflow-x-auto">
-              {pageContent()}
+                {pageContent()}
             </div>
         </DashboardLayout>
     );

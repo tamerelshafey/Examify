@@ -1,6 +1,7 @@
+
+
 import React from 'react';
-import { LearningPath } from '../types';
-import { Language } from '../App';
+import { LearningPath, Language } from '../types';
 import PersonalizedLearningPath from './PersonalizedLearningPath';
 import LoadingSpinner from './LoadingSpinner';
 import { XCircleIcon } from './icons';

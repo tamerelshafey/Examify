@@ -1,8 +1,11 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { getQuestionBank } from '../services/mockApi';
+// Fix: Import from the correct API file.
+import { getQuestionBank } from '../services/api';
 import { Question, QuestionStatus, QuestionType } from '../types';
-import { useLanguage } from '../App';
+// Fix: Import useLanguage from its context file.
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface QuestionBankModalProps {
   isOpen: boolean;

@@ -1,8 +1,11 @@
 
+
+
 import React, { useState, useEffect } from 'react';
-import { getPlatformAnalytics } from '../services/mockApi';
+import { getPlatformAnalytics } from '../services/api';
 import { BarChartIcon, BookOpenIcon, UsersIcon, ShieldCheckIcon, SettingsIcon, CheckCircleIcon, ClipboardListIcon, TagIcon } from '../components/icons';
-import { Language, useLanguage } from '../App';
+// Fix: Import Language from types and useLanguage from its context file.
+import { useLanguage } from '../contexts/LanguageContext';
 import DashboardLayout from '../components/DashboardLayout';
 
 const translations = {

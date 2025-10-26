@@ -1,8 +1,7 @@
-
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../types';
-import { useLanguage } from '../App';
+import { useLanguage } from '../contexts/LanguageContext';
 import { SettingsIcon, XCircleIcon, BookOpenIcon, UsersIcon, BuildingIcon, BriefcaseIcon, ShieldCheckIcon, LogOutIcon } from './icons';
 
 // Translations
@@ -31,7 +30,8 @@ const translations = {
     }
 };
 
-const roleIcons = {
+// Fix: Explicitly type roleIcons to ensure type safety when indexing with UserRole enum.
+const roleIcons: Record<UserRole, React.ElementType> = {
     [UserRole.Teacher]: BookOpenIcon,
     [UserRole.Examinee]: UsersIcon,
     [UserRole.TrainingCompany]: BuildingIcon,

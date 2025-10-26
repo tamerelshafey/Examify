@@ -1,461 +1,373 @@
-import React, { useState, useEffect, useMemo, ReactNode } from 'react';
-import { SparklesIcon, LightbulbIcon, TrendingDownIcon, SpinnerIcon, BarChartIcon, AlertTriangleIcon, EyeIcon } from './icons';
-import { Language, useLanguage } from '../App';
-import { Exam, ExamResult, Question, StudentRiskProfile, LearningPath, UserRole } from '../types';
-import DashboardLayout from './DashboardLayout';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { UserRole, Exam, ExamResult, Question, Answer } from '../types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChartIcon, DownloadIcon, SparklesIcon, SpinnerIcon, LightbulbIcon, InboxIcon } from './icons';
+import { analyzeExamResultsWithAI } from '../services/ai';
+import { useLanguage } from '../contexts/LanguageContext';
 import LoadingSpinner from './LoadingSpinner';
 import EmptyState from './EmptyState';
-import ViewLearningPathModal from './ViewLearningPathModal';
+
+const translations = {
+    en: {
+        title: "Analytics Overview",
+        loadingExams: "Loading exams...",
+        loadingAnalytics: "Loading analytics data...",
+        allExams: "All Exams",
+        selectExam: "Select an exam to analyze",
+        totalSubmissions: "Total Submissions",
+        averageScore: "Average Score",
+        passRate: "Pass Rate (>=70%)",
+        highestScore: "Highest Score",
+        lowestScore: "Lowest Score",
+        scoreDistribution: "Score Distribution",
+        questionPerformance: "Question Performance",
+        question: "Question",
+        correct: "Correct",
+        incorrect: "Incorrect",
+        avgScore: "Avg. Score",
+        exportPDF: "Export PDF",
+        exportCSV: "Export CSV",
+        analyzeAI: "Analyze with AI",
+        analyzing: "Analyzing...",
+        aiAnalysis: "AI Analysis",
+        noExams: "No exams found for this user.",
+        noResults: "No results submitted for this exam yet.",
+    },
+    ar: {
+        title: "نظرة عامة على التحليلات",
+        loadingExams: "جاري تحميل الاختبارات...",
+        loadingAnalytics: "جاري تحميل بيانات التحليلات...",
+        allExams: "كل الاختبارات",
+        selectExam: "اختر اختبارًا لتحليله",
+        totalSubmissions: "إجمالي التقديمات",
+        averageScore: "متوسط الدرجات",
+        passRate: "معدل النجاح (>=70%)",
+        highestScore: "أعلى درجة",
+        lowestScore: "أدنى درجة",
+        scoreDistribution: "توزيع الدرجات",
+        questionPerformance: "أداء الأسئلة",
+        question: "السؤال",
+        correct: "صحيح",
+        incorrect: "غير صحيح",
+        avgScore: "متوسط الدرجة",
+        exportPDF: "تصدير PDF",
+        exportCSV: "تصدير CSV",
+        analyzeAI: "تحليل بالذكاء الاصطناعي",
+        analyzing: "جاري التحليل...",
+        aiAnalysis: "تحليل الذكاء الاصطناعي",
+        noExams: "لم يتم العثور على اختبارات لهذا المستخدم.",
+        noResults: "لم يتم تقديم أي نتائج لهذا الاختبار بعد.",
+    }
+};
+
+interface AnalyticsData {
+    keyMetrics: {
+        totalSubmissions: number;
+        averageScore: number;
+        passRate: number;
+        highestScore: number;
+        lowestScore: number;
+    };
+    scoreDistribution: { name: string; count: number }[];
+    questionPerformance: {
+        text: string;
+        correctCount: number;
+        incorrectCount: number;
+        correctPercentage: number;
+    }[];
+}
 
 interface AnalyticsComponentProps {
     userRole: UserRole;
     getExamsApi: () => Promise<Omit<Exam, 'questions'>[]>;
-    getExamDetailsApi: (id: string) => Promise<Exam | undefined>;
-    getResultsForExamApi: (id: string) => Promise<ExamResult[]>;
-    getQuestionAnalysisApi: (params: { question: Question; results: ExamResult[] }) => Promise<{ insight: string }>;
-    getExamSummaryApi: (params: { examTitle: string; results: ExamResult[] }) => Promise<{ summary: string; struggles: string; suggestions: string }>;
-    predictStudentPerformanceApi?: () => Promise<StudentRiskProfile[]>;
-    generateLearningPathApi?: (params: { exam: Exam, result: ExamResult }) => Promise<LearningPath>;
-    getExamResultDetailsApi?: (resultId: string) => Promise<{ result: ExamResult, exam: Exam } | null>;
-    navLinks: any[];
-    sidebarHeader: ReactNode;
-    translations: any;
+    getResultsForExamApi: (examId: string) => Promise<ExamResult[]>;
+    getExamDetailsApi: (examId: string) => Promise<Exam | undefined>;
 }
 
-const StatCard = ({ title, value }: { title: string, value: string | number }) => (
-    <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md">
-        <p className="text-sm text-slate-500 dark:text-slate-400">{title}</p>
-        <p className="text-2xl font-bold text-slate-800 dark:text-slate-100 truncate">{value}</p>
-    </div>
-);
-
-type SummaryData = { summary: string; struggles: string; suggestions: string };
-
-const AIExamSummaryCard = ({ summary, loading, lang, t }: { summary: SummaryData | null, loading: boolean, lang: Language, t: any }) => {
-    if (loading) {
-        return (
-            <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg p-6 mb-8 flex items-center justify-center">
-                <SpinnerIcon className="w-6 h-6 text-primary-500 me-3" />
-                <p className="text-slate-600 dark:text-slate-300 font-semibold">{t.aiSummary.loading}</p>
-            </div>
-        );
+const isAnswerCorrect = (question: Question, userAnswer: Answer): boolean => {
+    // This is a simplified version. A real app might have more complex logic.
+    if (userAnswer === undefined || userAnswer === null) return false;
+    if (Array.isArray(question.correctAnswer)) {
+        if (!Array.isArray(userAnswer)) return false;
+        return JSON.stringify([...question.correctAnswer].sort()) === JSON.stringify([...userAnswer].sort());
     }
-    if (!summary) return null;
-
-    return (
-        <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg p-6 mb-8">
-            <h3 className="text-xl font-bold mb-4 flex items-center text-slate-800 dark:text-slate-100"><SparklesIcon className="w-6 h-6 me-2 text-primary-500"/>{t.aiSummary.title}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                    <h4 className="font-semibold flex items-center text-slate-600 dark:text-slate-300"><BarChartIcon className="w-5 h-5 me-2 text-teal-500"/>{t.aiSummary.performance}</h4>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 italic">"{summary.summary}"</p>
-                </div>
-                <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                    <h4 className="font-semibold flex items-center text-slate-600 dark:text-slate-300"><TrendingDownIcon className="w-5 h-5 me-2 text-red-500"/>{t.aiSummary.struggles}</h4>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 italic">"{summary.struggles}"</p>
-                </div>
-                <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                    <h4 className="font-semibold flex items-center text-slate-600 dark:text-slate-300"><LightbulbIcon className="w-5 h-5 me-2 text-yellow-500"/>{t.aiSummary.suggestions}</h4>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 italic">"{summary.suggestions}"</p>
-                </div>
-            </div>
-        </div>
-    );
+    return String(userAnswer).toLowerCase() === String(question.correctAnswer).toLowerCase();
 };
 
-const AnalyticsComponent: React.FC<AnalyticsComponentProps> = ({
-    userRole,
-    getExamsApi,
-    getExamDetailsApi,
-    getResultsForExamApi,
-    getQuestionAnalysisApi,
-    getExamSummaryApi,
-    predictStudentPerformanceApi,
-    generateLearningPathApi,
-    getExamResultDetailsApi,
-    navLinks,
-    sidebarHeader,
-    translations: t,
-}) => {
+const AnalyticsComponent: React.FC<AnalyticsComponentProps> = ({ userRole, getExamsApi, getResultsForExamApi, getExamDetailsApi }) => {
     const { lang } = useLanguage();
-    const Recharts = (window as any).Recharts;
-    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = Recharts || {};
-    
+    const t = translations[lang];
+    const reportRef = useRef<HTMLDivElement>(null);
+
     const [exams, setExams] = useState<Omit<Exam, 'questions'>[]>([]);
-    const [selectedExamId, setSelectedExamId] = useState<string>('');
-    const [examDetails, setExamDetails] = useState<Exam | null>(null);
-    const [results, setResults] = useState<ExamResult[]>([]);
+    const [selectedExamId, setSelectedExamId] = useState<string>('all');
+    const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
     const [loadingExams, setLoadingExams] = useState(true);
-    const [loadingResults, setLoadingResults] = useState(false);
-    const [loadingSummary, setLoadingSummary] = useState(false);
-    const [summary, setSummary] = useState<SummaryData | null>(null);
-    const [activeTab, setActiveTab] = useState('questions');
-    const [aiInsights, setAiInsights] = useState<Record<string, { loading: boolean; insight: string | null; error: string | null }>>({});
-    const [atRiskStudents, setAtRiskStudents] = useState<StudentRiskProfile[]>([]);
-    const [loadingAtRisk, setLoadingAtRisk] = useState(true);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [modalData, setModalData] = useState<{ studentName: string; examTitle: string; learningPath: LearningPath | null; isLoading: boolean; error: string | null }>({ studentName: '', examTitle: '', learningPath: null, isLoading: false, error: null });
+    const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+    const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+    const [isAiLoading, setIsAiLoading] = useState(false);
 
     useEffect(() => {
-        const fetchInitialData = async () => {
+        const fetchExams = async () => {
+            setLoadingExams(true);
             try {
-                setLoadingExams(true);
-                if (predictStudentPerformanceApi) setLoadingAtRisk(true);
-                
-                const promises: Promise<any>[] = [getExamsApi()];
-                if (predictStudentPerformanceApi) {
-                    promises.push(predictStudentPerformanceApi());
-                }
-
-                const [examsData, atRiskData] = await Promise.all(promises);
-                
-                setExams(examsData);
-                if(atRiskData) setAtRiskStudents(atRiskData);
-
+                const examsList = await getExamsApi();
+                setExams(examsList);
             } catch (error) {
-                console.error("Failed to fetch initial analytics data:", error);
+                console.error("Failed to fetch exams:", error);
             } finally {
                 setLoadingExams(false);
-                if (predictStudentPerformanceApi) setLoadingAtRisk(false);
             }
         };
-        fetchInitialData();
-    }, [getExamsApi, predictStudentPerformanceApi]);
+        fetchExams();
+    }, [getExamsApi]);
 
-     useEffect(() => {
-        if (selectedExamId) {
-            const fetchExamData = async () => {
-                try {
-                    setLoadingResults(true);
-                    setLoadingSummary(true);
-                    setAiInsights({});
-                    setSummary(null);
-                    const [details, examResults] = await Promise.all([
+    useEffect(() => {
+        const processAnalytics = async () => {
+            if (exams.length === 0) return;
+
+            setLoadingAnalytics(true);
+            setAnalyticsData(null);
+            setAiAnalysis(null);
+
+            try {
+                let results: ExamResult[] = [];
+                let examDetails: Exam | undefined;
+
+                if (selectedExamId === 'all') {
+                    const allResults = await Promise.all(exams.map(exam => getResultsForExamApi(exam.id)));
+                    results = allResults.flat();
+                } else {
+                    [examDetails, results] = await Promise.all([
                         getExamDetailsApi(selectedExamId),
-                        getResultsForExamApi(selectedExamId),
+                        getResultsForExamApi(selectedExamId)
                     ]);
-                    setExamDetails(details || null);
-                    setResults(examResults);
-
-                    if (details && examResults.length > 0) {
-                        const summaryData = await getExamSummaryApi({ examTitle: details.title, results: examResults });
-                        setSummary(summaryData);
-                    }
-                } catch (error) {
-                    console.error("Failed to fetch exam data:", error);
-                } finally {
-                    setLoadingResults(false);
-                    setLoadingSummary(false);
                 }
-            };
-            fetchExamData();
-        } else {
-            setResults([]);
-            setExamDetails(null);
-        }
-    }, [selectedExamId, getExamDetailsApi, getResultsForExamApi, getExamSummaryApi]);
 
-    const handleGetInsight = async (question: Question) => {
-        setAiInsights(prev => ({ ...prev, [question.id]: { loading: true, insight: null, error: null } }));
-        try {
-            const res = await getQuestionAnalysisApi({ question, results });
-            setAiInsights(prev => ({ ...prev, [question.id]: { loading: false, insight: res.insight, error: null } }));
-        } catch (error: any) {
-            setAiInsights(prev => ({ ...prev, [question.id]: { loading: false, insight: null, error: error.message || "An error occurred" } }));
-        }
-    };
-
-    const handleViewLearningPath = async (student: StudentRiskProfile) => {
-        if (!student.lastResultId || !getExamResultDetailsApi || !generateLearningPathApi) return;
-        
-        setModalData({ studentName: student.examineeName, examTitle: '', learningPath: null, isLoading: true, error: null });
-        setIsModalOpen(true);
-        
-        try {
-            const resultDetails = await getExamResultDetailsApi(student.lastResultId);
-            if (!resultDetails) throw new Error("Could not find student's last result.");
-            
-            setModalData(prev => ({...prev, examTitle: resultDetails.exam.title}));
-            
-            const path = await generateLearningPathApi({ exam: resultDetails.exam, result: resultDetails.result });
-            setModalData(prev => ({...prev, learningPath: path, isLoading: false}));
-        } catch (err: any) {
-            setModalData(prev => ({...prev, isLoading: false, error: err.message}));
-        }
-    };
-    
-    const examAnalytics = useMemo(() => {
-        if (!examDetails || results.length === 0) {
-            return {
-                averageScore: 0,
-                hardestQuestion: t.na,
-                easiestQuestion: t.na,
-                questionPerformance: [],
-                tagPerformance: [],
-                scoreDistribution: [],
-            };
-        }
-
-        const questionPerformance = examDetails.questions.map(q => {
-            const questionResults = results.map(r => {
-                const answer = r.answers[q.id];
-                const isCorrect = JSON.stringify(answer)?.toLowerCase() === JSON.stringify(q.correctAnswer)?.toLowerCase();
-                return isCorrect ? q.points : 0;
-            });
-            const averageScore = questionResults.reduce((sum, score) => sum + score, 0) / results.length;
-            const percentCorrect = (questionResults.filter(s => s > 0).length / results.length) * 100;
-            return { id: q.id, text: q.text, question: q, averageScore, percentCorrect };
-        });
-        
-        const sortedByPerf = [...questionPerformance].sort((a, b) => a.averageScore - b.averageScore);
-        const hardestQuestion = sortedByPerf[0]?.text || t.na;
-        const easiestQuestion = sortedByPerf[sortedByPerf.length - 1]?.text || t.na;
-
-        const tagPerformanceMap: Record<string, { totalScore: number, totalPoints: number, count: number }> = {};
-        examDetails.questions.forEach(q => {
-            const tags = q.tags && q.tags.length > 0 ? q.tags : [t.uncategorized];
-            tags.forEach(tag => {
-                if (!tagPerformanceMap[tag]) {
-                    tagPerformanceMap[tag] = { totalScore: 0, totalPoints: 0, count: 0 };
+                if (results.length === 0) {
+                    setLoadingAnalytics(false);
+                    return;
                 }
-                const questionScores = results.map(r => {
-                    const answer = r.answers[q.id];
-                    const isCorrect = JSON.stringify(answer)?.toLowerCase() === JSON.stringify(q.correctAnswer)?.toLowerCase();
-                    return isCorrect ? q.points : 0;
+                
+                // Key Metrics
+                const scores = results.map(r => (r.score / r.totalPoints) * 100);
+                const totalSubmissions = results.length;
+                const averageScore = scores.reduce((a, b) => a + b, 0) / totalSubmissions;
+                const passRate = (scores.filter(s => s >= 70).length / totalSubmissions) * 100;
+                const highestScore = Math.max(...scores);
+                const lowestScore = Math.min(...scores);
+                
+                // Score Distribution
+                const scoreDistribution = Array.from({ length: 10 }, (_, i) => ({
+                    name: `${i * 10}-${i * 10 + 10}%`,
+                    count: 0,
+                }));
+                scores.forEach(score => {
+                    const index = Math.min(Math.floor(score / 10), 9);
+                    scoreDistribution[index].count++;
                 });
-                tagPerformanceMap[tag].totalScore += questionScores.reduce((sum, s) => sum + s, 0);
-                tagPerformanceMap[tag].totalPoints += q.points * results.length;
+
+                // Question Performance
+                let questionPerformance: AnalyticsData['questionPerformance'] = [];
+                if (examDetails) {
+                    questionPerformance = examDetails.questions.map(q => {
+                        let correctCount = 0;
+                        results.forEach(r => {
+                            if (isAnswerCorrect(q, r.answers[q.id])) {
+                                correctCount++;
+                            }
+                        });
+                        return {
+                            text: q.text,
+                            correctCount: correctCount,
+                            incorrectCount: totalSubmissions - correctCount,
+                            correctPercentage: (correctCount / totalSubmissions) * 100,
+                        };
+                    });
+                }
+                
+                setAnalyticsData({
+                    keyMetrics: { totalSubmissions, averageScore, passRate, highestScore, lowestScore },
+                    scoreDistribution,
+                    questionPerformance,
+                });
+
+            } catch (error) {
+                console.error("Failed to process analytics:", error);
+            } finally {
+                setLoadingAnalytics(false);
+            }
+        };
+
+        processAnalytics();
+    }, [selectedExamId, exams, getResultsForExamApi, getExamDetailsApi]);
+    
+    const handleAnalyzeWithAI = async () => {
+        if (!analyticsData) return;
+        setIsAiLoading(true);
+        setAiAnalysis(null);
+        try {
+            const examTitle = selectedExamId === 'all' ? 'All Exams' : exams.find(e => e.id === selectedExamId)?.title || 'Selected Exam';
+            const { analysis } = await analyzeExamResultsWithAI({
+                examTitle,
+                keyMetrics: analyticsData.keyMetrics,
+                questionPerformance: analyticsData.questionPerformance
             });
+            setAiAnalysis(analysis);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsAiLoading(false);
+        }
+    };
+    
+    const exportToPDF = () => {
+        const { jsPDF } = (window as any).jspdf;
+        const html2canvas = (window as any).html2canvas;
+        if (reportRef.current) {
+            html2canvas(reportRef.current, { scale: 2 }).then(canvas => {
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save(`analytics_report_${selectedExamId}.pdf`);
+            });
+        }
+    };
+
+    const exportToCSV = () => {
+        if (!analyticsData || analyticsData.questionPerformance.length === 0) return;
+        
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Question,Correct Count,Incorrect Count,Correct Percentage\n";
+        
+        analyticsData.questionPerformance.forEach(row => {
+            const escapedText = `"${row.text.replace(/"/g, '""')}"`;
+            csvContent += [escapedText, row.correctCount, row.incorrectCount, `${row.correctPercentage.toFixed(1)}%`].join(",") + "\n";
         });
 
-        const tagPerformance = Object.entries(tagPerformanceMap).map(([tag, data]) => ({
-            name: tag,
-            avg: (data.totalScore / data.totalPoints) * 100
-        }));
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `question_performance_${selectedExamId}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
-        const scoreDistribution = results.reduce((acc, result) => {
-            const percentage = (result.score / result.totalPoints) * 100;
-            const bin = Math.floor(percentage / 10) * 10;
-            const binName = `${bin}-${bin + 10}%`;
-            acc[binName] = (acc[binName] || 0) + 1;
-            return acc;
-        }, {} as Record<string, number>);
 
-        const sortedScoreDistribution = Object.entries(scoreDistribution)
-            .map(([name, count]) => ({ name, count }))
-            .sort((a,b) => parseInt(a.name) - parseInt(b.name));
-
-        return {
-            averageScore: (results.reduce((acc, r) => acc + r.score, 0) / (results.length * examDetails.questions.reduce((sum, q) => sum + q.points, 0))) * 100,
-            hardestQuestion,
-            easiestQuestion,
-            questionPerformance,
-            tagPerformance,
-            scoreDistribution: sortedScoreDistribution,
-        };
-    }, [results, examDetails, t.na, t.uncategorized]);
-
-    const renderQuestionAnalysis = () => (
-        <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
-                <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
-                    <tr>
-                        <th scope="col" className="px-6 py-3">{t.question}</th>
-                        <th scope="col" className="px-6 py-3">{t.avgScore}</th>
-                        <th scope="col" className="px-6 py-3">{t.percentCorrect}</th>
-                        <th scope="col" className="px-6 py-3">{t.aiInsight}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {examAnalytics.questionPerformance.map(q => {
-                        const insightState = aiInsights[q.id];
-                        return(
-                            <tr key={q.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700">
-                                <td className="px-6 py-4 font-medium text-slate-900 dark:text-white max-w-md truncate">{q.text}</td>
-                                <td className="px-6 py-4">{q.averageScore.toFixed(2)} / {q.question.points}</td>
-                                <td className="px-6 py-4">{q.percentCorrect.toFixed(1)}%</td>
-                                <td className="px-6 py-4">
-                                    {!insightState ? (
-                                        <button onClick={() => handleGetInsight(q.question)} className="flex items-center gap-1 text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">
-                                            <SparklesIcon className="w-3 h-3"/> {t.getAIInsight}
-                                        </button>
-                                    ) : insightState.loading ? (
-                                        <span className="text-xs">{t.analyzing}</span>
-                                    ) : insightState.error ? (
-                                        <span className="text-xs text-red-500">{insightState.error}</span>
-                                    ) : (
-                                        <div className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
-                                            <LightbulbIcon className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5"/> 
-                                            <p className="italic">"{insightState.insight}"</p>
-                                        </div>
-                                    )}
-                                </td>
-                            </tr>
-                        )
-                    })}
-                </tbody>
-            </table>
-        </div>
-    );
-    
-    const renderTagPerformance = () => (
-        <div className="h-96">
-            {Recharts ? (
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={examAnalytics.tagPerformance} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis type="number" domain={[0, 100]} unit="%" />
-                        <YAxis type="category" dataKey="name" width={100} />
-                        <Tooltip contentStyle={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', border: 'none', color: '#fff' }}/>
-                        <Legend />
-                        <Bar dataKey="avg" fill={t.barColor1 || "#3b82f6"} name={t.averageScore} />
-                    </BarChart>
-                </ResponsiveContainer>
-            ) : <p>{t.loadingChart}</p>}
-        </div>
-    );
-
-    const renderScoreDistribution = () => (
-         <div className="h-96">
-            {Recharts ? (
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={examAnalytics.scoreDistribution} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis allowDecimals={false} />
-                        <Tooltip contentStyle={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', border: 'none', color: '#fff' }}/>
-                        <Legend />
-                        <Bar dataKey="count" fill={t.barColor2 || "#14b8a6"} name={t.numberOfStudents || t.numberOfCandidates || t.numberOfTrainees} />
-                    </BarChart>
-                </ResponsiveContainer>
-            ) : <p>{t.loadingChart}</p>}
-        </div>
-    );
-
-    const renderAtRiskStudents = () => {
-        if (userRole !== UserRole.Teacher) return null;
-
-        const riskColors = {
-            high: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
-            medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300',
-        };
-
-        return (
-            <div className="mt-12">
-                 <h3 className="text-2xl font-bold mb-2 flex items-center"><AlertTriangleIcon className="w-6 h-6 me-3 text-yellow-500"/>{t.atRisk.title}</h3>
-                 <p className="text-slate-500 dark:text-slate-400 mb-6 max-w-3xl">{t.atRisk.description}</p>
-                 {loadingAtRisk ? (
-                     <div className="flex items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
-                         <SpinnerIcon className="w-6 h-6 text-primary-500 me-3" />
-                         <p>{t.atRisk.loading}</p>
-                     </div>
-                 ) : atRiskStudents.length === 0 ? (
-                     <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-lg shadow-md">
-                         <h3 className="mt-2 text-lg font-medium text-slate-900 dark:text-slate-100">{t.atRisk.noStudents}</h3>
-                     </div>
-                 ) : (
-                     <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg overflow-hidden">
-                        <ul className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {atRiskStudents.map(student => (
-                                <li key={student.examineeId} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex-1">
-                                            <p className="font-bold text-slate-800 dark:text-slate-100">{student.examineeName}</p>
-                                            <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 italic">"{student.justification}"</p>
-                                        </div>
-                                        <div className="flex items-center gap-4 ms-4">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${riskColors[student.riskLevel]}`}>{student.riskLevel}</span>
-                                            {student.hasGeneratedLearningPath && (
-                                                <button 
-                                                    onClick={() => handleViewLearningPath(student)} 
-                                                    className="flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline"
-                                                >
-                                                    <EyeIcon className="w-4 h-4" />
-                                                    {t.atRisk.viewPlan}
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                 )}
-            </div>
-        );
+    if (loadingExams) {
+        return <LoadingSpinner />;
+    }
+    if (exams.length === 0) {
+        return <EmptyState icon={BarChartIcon} title={t.noExams} message="" />;
     }
 
     return (
-        <>
-            <DashboardLayout
-                navLinks={navLinks}
-                pageTitle=""
-                sidebarHeader={sidebarHeader}
-            >
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-3xl font-bold">{t.performanceAnalytics}</h2>
-                    <select
-                        value={selectedExamId}
-                        onChange={e => setSelectedExamId(e.target.value)}
-                        className="p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-primary-500"
-                        disabled={loadingExams}
-                    >
-                        <option value="">{loadingExams ? t.loadingExams : t.selectExam}</option>
-                        {exams.map(exam => <option key={exam.id} value={exam.id}>{exam.title}</option>)}
-                    </select>
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                <select
+                    value={selectedExamId}
+                    onChange={(e) => setSelectedExamId(e.target.value)}
+                    className="p-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-primary-500"
+                >
+                    <option value="all">{t.allExams}</option>
+                    {exams.map(exam => <option key={exam.id} value={exam.id}>{exam.title}</option>)}
+                </select>
+                <div className="flex gap-2">
+                    <button onClick={exportToPDF} className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 px-3 py-2 rounded-lg">
+                        <DownloadIcon className="w-4 h-4" /> {t.exportPDF}
+                    </button>
+                    {selectedExamId !== 'all' && (
+                        <button onClick={exportToCSV} className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 px-3 py-2 rounded-lg">
+                           <DownloadIcon className="w-4 h-4" /> {t.exportCSV}
+                        </button>
+                    )}
                 </div>
-                {loadingResults ? <LoadingSpinner /> :
-                 !selectedExamId || results.length === 0 ? (
-                    <div>
-                        <EmptyState 
-                            icon={BarChartIcon}
-                            title={t.noDataTitle}
-                            message={selectedExamId ? t.noResultsMessage : t.pleaseSelectMessage}
-                        />
-                        {renderAtRiskStudents()}
-                    </div>
-                 ) : (
-                    <>
-                    <AIExamSummaryCard summary={summary} loading={loadingSummary} lang={lang} t={t} />
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                        <StatCard title={t.averageScore} value={`${examAnalytics.averageScore.toFixed(1)}%`} />
-                        <StatCard title={t.hardestQuestion} value={examAnalytics.hardestQuestion} />
-                        <StatCard title={t.easiestQuestion} value={examAnalytics.easiestQuestion} />
-                    </div>
-                    
-                    <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg p-6">
-                        <div className="border-b border-slate-200 dark:border-slate-700 mb-6">
-                            <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                                <button onClick={() => setActiveTab('questions')} className={`${activeTab === 'questions' ? 'border-primary-500 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}>
-                                    {t.questionAnalysis}
-                                </button>
-                                <button onClick={() => setActiveTab('tags')} className={`${activeTab === 'tags' ? 'border-primary-500 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}>
-                                    {t.performanceByTag}
-                                </button>
-                                 <button onClick={() => setActiveTab('distribution')} className={`${activeTab === 'distribution' ? 'border-primary-500 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}>
-                                    {t.scoreDistribution}
-                                </button>
-                            </nav>
+            </div>
+            
+            <div ref={reportRef} className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-md">
+                {loadingAnalytics && <div className="text-center py-10"><LoadingSpinner /></div>}
+                
+                {!loadingAnalytics && !analyticsData && <EmptyState icon={InboxIcon} title={t.noResults} message="" />}
+
+                {analyticsData && (
+                    <div className="space-y-8">
+                        {/* Key Metrics */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 text-center">
+                            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p className="text-sm text-slate-500">{t.totalSubmissions}</p><p className="text-2xl font-bold">{analyticsData.keyMetrics.totalSubmissions}</p></div>
+                            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p className="text-sm text-slate-500">{t.averageScore}</p><p className="text-2xl font-bold">{analyticsData.keyMetrics.averageScore.toFixed(1)}%</p></div>
+                            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p className="text-sm text-slate-500">{t.passRate}</p><p className="text-2xl font-bold">{analyticsData.keyMetrics.passRate.toFixed(1)}%</p></div>
+                            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p className="text-sm text-slate-500">{t.highestScore}</p><p className="text-2xl font-bold text-green-500">{analyticsData.keyMetrics.highestScore.toFixed(1)}%</p></div>
+                            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p className="text-sm text-slate-500">{t.lowestScore}</p><p className="text-2xl font-bold text-red-500">{analyticsData.keyMetrics.lowestScore.toFixed(1)}%</p></div>
                         </div>
-                        {activeTab === 'questions' && renderQuestionAnalysis()}
-                        {activeTab === 'tags' && renderTagPerformance()}
-                        {activeTab === 'distribution' && renderScoreDistribution()}
+
+                        {/* Score Distribution Chart */}
+                        <div>
+                            <h3 className="text-lg font-bold mb-4">{t.scoreDistribution}</h3>
+                            <div className="h-64">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={analyticsData.scoreDistribution}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-slate-200 dark:stroke-slate-700" />
+                                        <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 12 }} />
+                                        <YAxis allowDecimals={false} tick={{ fill: 'currentColor', fontSize: 12 }} />
+                                        <Tooltip contentStyle={{ backgroundColor: 'rgba(30, 41, 59, 0.8)', border: 'none' }} />
+                                        <Bar dataKey="count" fill="var(--color-primary-500, #3b82f6)" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Question Performance Table */}
+                        {analyticsData.questionPerformance.length > 0 && (
+                            <div>
+                                <h3 className="text-lg font-bold mb-4">{t.questionPerformance}</h3>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                                            <tr>
+                                                <th className="px-6 py-3">{t.question}</th>
+                                                <th className="px-6 py-3 text-center">{t.correct}</th>
+                                                <th className="px-6 py-3 text-center">{t.incorrect}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {analyticsData.questionPerformance.map((q, i) => (
+                                                <tr key={i} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700">
+                                                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-white max-w-md truncate">{q.text}</td>
+                                                    <td className="px-6 py-4 text-center text-green-600">{q.correctPercentage.toFixed(1)}% ({q.correctCount})</td>
+                                                    <td className="px-6 py-4 text-center text-red-600">{(100 - q.correctPercentage).toFixed(1)}% ({q.incorrectCount})</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
                     </div>
-                    {renderAtRiskStudents()}
-                    </>
-                 )}
-            </DashboardLayout>
-            <ViewLearningPathModal 
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                studentName={modalData.studentName}
-                examTitle={modalData.examTitle}
-                learningPath={modalData.learningPath}
-                isLoading={modalData.isLoading}
-                error={modalData.error}
-                lang={lang}
-            />
-        </>
+                )}
+            </div>
+
+            {/* AI Analysis Section */}
+            {analyticsData && (
+                 <div className="bg-primary-50 dark:bg-primary-900/20 p-6 rounded-lg border border-primary-200 dark:border-primary-500/30">
+                     <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-bold text-primary-800 dark:text-primary-300 flex items-center gap-2"><LightbulbIcon className="w-5 h-5"/>{t.aiAnalysis}</h3>
+                         <button onClick={handleAnalyzeWithAI} disabled={isAiLoading} className="bg-primary-500 hover:bg-primary-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center gap-2 text-sm disabled:opacity-50">
+                            {isAiLoading ? <SpinnerIcon className="w-4 h-4" /> : <SparklesIcon className="w-4 h-4" />}
+                            {isAiLoading ? t.analyzing : t.analyzeAI}
+                        </button>
+                     </div>
+                     {isAiLoading && <div className="mt-4 text-center"><SpinnerIcon className="w-6 h-6 mx-auto text-primary-500"/></div>}
+                     {aiAnalysis && (
+                         <div className="mt-4 whitespace-pre-wrap text-slate-700 dark:text-slate-300 text-sm">
+                            {aiAnalysis}
+                         </div>
+                     )}
+                 </div>
+            )}
+        </div>
     );
 };
 

@@ -5,8 +5,11 @@ import { Exam, Question, QuestionType, QuestionStatus } from '../types';
 import { PlusCircleIcon, TrashIcon, XCircleIcon, SparklesIcon, Wand2Icon, SpinnerIcon, LightbulbIcon } from './icons';
 import QuestionBankModal from './QuestionBankModal';
 import AIQuestionGeneratorModal from './AIQuestionGeneratorModal';
-import { getAIQuestionSuggestions, analyzeQuestionWithAI, getCategories } from '../services/mockApi';
-import { useLanguage } from '../App';
+// Fix: Split API calls into their correct modules.
+import { getAIQuestionSuggestions, analyzeQuestionWithAI } from '../services/ai';
+import { getStructuredCategories } from '../services/api';
+// Fix: Import useLanguage from its context file.
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface ExamFormModalProps {
   isOpen: boolean;
@@ -116,6 +119,15 @@ const translations = {
 type AnalysisResult = { feedback: string; category: string; subCategory: string; tags: string[] };
 type EditableQuestion = Omit<Question, 'id'>;
 
+const flattenCategories = (structured: Record<string, Record<string, string[]>>): Record<string, string[]> => {
+    const flat: Record<string, string[]> = {};
+    Object.values(structured).forEach(specializedGroup => {
+        Object.assign(flat, specializedGroup);
+    });
+    return flat;
+};
+
+
 const ExamFormModal: React.FC<ExamFormModalProps> = ({ isOpen, onClose, onSave }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -133,7 +145,9 @@ const ExamFormModal: React.FC<ExamFormModalProps> = ({ isOpen, onClose, onSave }
 
   useEffect(() => {
     if (isOpen) {
-        getCategories().then(setCategories);
+        getStructuredCategories().then(structuredCats => {
+            setCategories(flattenCategories(structuredCats));
+        });
     } else {
       setTitle('');
       setDescription('');

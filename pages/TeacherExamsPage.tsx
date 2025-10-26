@@ -1,8 +1,8 @@
-
 import React from 'react';
-import { createTeacherExam, getTeacherExams } from '../services/mockApi';
+import { createTeacherExam, getTeacherExams } from '../services/api';
 import { BookOpenIcon, BarChartIcon, ClipboardListIcon } from '../components/icons';
-import { useTheme, useLanguage } from '../App';
+import { useTheme } from '../contexts/ThemeContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import DashboardComponent from '../components/DashboardComponent';
 import { UserRole } from '../types';
 
@@ -12,6 +12,7 @@ const translations = {
         myExams: "My Exams",
         questionBank: "Question Bank",
         analytics: "Analytics",
+        importFromText: "Import from Text",
         generateExamAI: "Generate Exam with AI",
         createNewExam: "Create New Exam",
         viewResults: "View Results",
@@ -27,6 +28,7 @@ const translations = {
         myExams: "اختباراتي",
         questionBank: "بنك الأسئلة",
         analytics: "التحليلات",
+        importFromText: "استيراد من نص",
         generateExamAI: "إنشاء اختبار بالذكاء الاصطناعي",
         createNewExam: "إنشاء اختبار جديد",
         viewResults: "عرض النتائج",
@@ -65,6 +67,7 @@ const TeacherExamsPage = () => {
             getExamsApi={getTeacherExams}
             createExamApi={createTeacherExam}
             translations={{
+                importFromText: t.importFromText,
                 generateExamAI: t.generateExamAI,
                 createNewExam: t.createNewExam,
                 viewResults: t.viewResults,

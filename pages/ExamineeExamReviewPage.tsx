@@ -2,10 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { getExamResultDetails, getAIExplanation, generatePersonalizedLearningPath } from '../services/mockApi';
+// Fix: Split API calls into their correct modules.
+import { getExamResultDetails } from '../services/api';
+import { getAIExplanation, generatePersonalizedLearningPath } from '../services/ai';
 import { Exam, ExamResult, Question, QuestionType, Answer, LearningPath } from '../types';
 import { BookOpenIcon, CheckCircleIcon, ArrowLeftIcon, XCircleIcon, LightbulbIcon, Wand2Icon, SpinnerIcon } from '../components/icons';
-import { useLanguage, useTheme } from '../App';
+// Fix: Import hooks from their respective context files.
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PersonalizedLearningPath from '../components/PersonalizedLearningPath';
